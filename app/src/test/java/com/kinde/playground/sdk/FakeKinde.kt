@@ -99,7 +99,9 @@ class FakeKinde : AutoCloseable {
         return mapOf(
             "iss" to base, "sub" to sub, "aud" to listOf<String>(), "azp" to clientId,
             "iat" to now, "exp" to now + accessTokenLifetimeSec, "jti" to "jti-${counter.incrementAndGet()}",
-            "org_code" to orgCode, "permissions" to permissions, "roles" to roles,
+            // Kinde's access tokens list roles as {id, key, name} objects.
+            "org_code" to orgCode, "permissions" to permissions,
+            "roles" to roles.mapIndexed { i, k -> mapOf("id" to "role_$i", "key" to k, "name" to k) },
             "feature_flags" to tokenFlags.mapValues { (_, v) -> mapOf("t" to v.first, "v" to v.second) },
             "scp" to listOf("openid", "offline", "email", "profile"),
         ) + extra

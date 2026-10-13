@@ -160,7 +160,7 @@ From reading the SDK (v2.2.0, `c2f1f9b`) and confirmed by the tests named. Sever
    and M2M secrets must not ship in apps. Consider removing them from the mobile SDK. → `ManagementApiTest`,
    `LiveKindeTest`.
 
-6. **Role checks from the token are always false.** Kinde's `roles` claim is an array of `{id, key, name}`
+6. **Role checks from the token are always false.** *Fixed on `kinde-sdk-android` branch `fix/roles-claim-objects`.* Kinde's `roles` claim is an array of `{id, key, name}`
    objects (verified live), but `ClaimDelegate` reads it as a list of strings. Token-based `getRoles()` returns
    each role as raw JSON text, and `getRole("role_admin")` is false even when the user has the role. Only
    `ApiOptions(forceApi = true)` works. → `AccountApiTest`, live check *Roles from the token*.

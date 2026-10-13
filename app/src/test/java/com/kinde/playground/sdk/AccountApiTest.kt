@@ -136,7 +136,6 @@ class AccountApiTest : SdkTestBase() {
     }
 
     @Test
-    @KnownIssue("Kinde's roles claim is an array of {id, key, name} objects (verified live); the SDK reads it as strings, so token getRoles() returns raw JSON and getRole(key) is always false")
     fun `roles from the token work with Kinde's object-shaped roles claim`() {
         val roleObjects = listOf(mapOf("id" to "r1", "key" to "role_admin", "name" to "Admin"), mapOf("id" to "r2", "key" to "role_read", "name" to "Read"))
         seedSession(kinde.issue(kinde.claims(extra = mapOf("roles" to roleObjects))))
@@ -144,6 +143,22 @@ class AccountApiTest : SdkTestBase() {
 
         assertEquals(listOf("role_admin", "role_read"), client().getRoles().roles)
         assertTrue(client().getRole("role_admin").isGranted)
+    }
+
+    @Test
+    fun `roles from older tokens as plain strings still work`() {
+        seedSession(kinde.issue(kinde.claims(extra = mapOf("roles" to listOf("admin", "editor")))))
+        facade()
+
+        assertEquals(listOf("admin", "editor"), client().getRoles().roles)
+        assertTrue(client().getRole("editor").isGranted)
+    }
+
+    @Test
+    fun `token and Account API agree on roles`() {
+        signedIn()
+
+        assertEquals(onBackground { client().getRoles(fresh) }.roles, client().getRoles().roles)
     }
 
     // -- Feature flags ---------------------------------------------------------------------------
