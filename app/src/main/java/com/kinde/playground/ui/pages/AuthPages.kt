@@ -93,13 +93,14 @@ fun SignInPage() {
         }
     }
 
-    SectionCard("Grant type", "GrantType.PKCE adds a code challenge. null (the SDK default) and NONE send none: compare them on the Security page after signing in.") {
+    SectionCard("Grant type", "PKCE adds a code challenge. Newer SDKs use it by default (null); 2.2.0 only with GrantType.PKCE. NONE opts out. Compare them on the Security page after signing in.") {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("PKCE", "default (null)", "NONE").forEach { g ->
                 FilterChip(selected = grant == g, onClick = { grant = g }, label = { Text(g) })
             }
         }
-        if (type != GrantType.PKCE) Note("Without PKCE an intercepted authorization code can be exchanged by another app. Kinde may also reject the exchange for a public client.", Outcome.WARN)
+        @Suppress("DEPRECATION")
+        if (type == GrantType.NONE) Note("Without PKCE an intercepted authorization code can be exchanged by another app. Kinde may also reject the exchange for a public client.", Outcome.WARN)
     }
 
     SectionCard("Options", "Blank fields are not sent.") {

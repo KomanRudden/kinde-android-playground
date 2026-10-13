@@ -71,7 +71,6 @@ class LoginFlowTest : SdkTestBase() {
     }
 
     @Test
-    @KnownIssue("The default login() sends no PKCE code challenge (the SDK calls setCodeVerifier(null) unless GrantType.PKCE); RFC 8252 requires PKCE for native apps")
     fun `default login uses PKCE`() {
         val f = signedOutFacade()
 
@@ -81,7 +80,6 @@ class LoginFlowTest : SdkTestBase() {
     }
 
     @Test
-    @KnownIssue("No nonce is sent (setNonce(null)) and the ID token is never validated, so ID token replay is not detected")
     fun `login sends a nonce`() {
         val f = signedOutFacade()
 
@@ -285,6 +283,63 @@ class LoginFlowTest : SdkTestBase() {
         deliverAuthorizationCode(f, started(f))
 
         assertTrue(awaitCondition { listener.exceptions.any { it.javaClass.simpleName == "TokenException" } })
+        assertFalse(client().isAuthenticated())
+    }
+
+    @Test
+    fun `default login exchanges the code with the PKCE verifier`() {
+        val f = signedOutFacade()
+        f.sdk.login()
+        val started = started(f)
+        val verifier = authRequest(started).codeVerifier
+
+        deliverAuthorizationCode(f, started)
+
+        assertTrue(awaitCondition { kinde.tokenRequests().isNotEmpty() })
+        assertEquals(verifier, kinde.form(kinde.tokenRequests().single())["code_verifier"])
+        assertTrue(awaitCondition { client().isAuthenticated() })
+    }
+
+    private fun signInWithIdToken(vararg overrides: Pair<String, Any?>): Facade {
+        kinde.idTokenOverrides = mapOf(*overrides)
+        val f = signedOutFacade()
+        f.sdk.login()
+        deliverAuthorizationCode(f, started(f))
+        assertTrue(awaitCondition { kinde.tokenRequests().isNotEmpty() })
+        idle(500)
+        return f
+    }
+
+    @Test
+    fun `an ID token with the wrong nonce is rejected`() {
+        signInWithIdToken("nonce" to "replayed-nonce")
+
+        assertFalse(client().isAuthenticated())
+        assertTrue(listener.tokens.isEmpty())
+        assertTrue(listener.exceptions.any { it.message.orEmpty().contains("nonce") })
+    }
+
+    @Test
+    fun `an ID token from another issuer is rejected`() {
+        signInWithIdToken("iss" to "https://evil.example.com")
+
+        assertFalse(client().isAuthenticated())
+        assertTrue(listener.exceptions.any { it.message.orEmpty().contains("issuer") })
+    }
+
+    @Test
+    fun `an ID token for another app is rejected`() {
+        signInWithIdToken("aud" to listOf("someone_elses_client"))
+
+        assertFalse(client().isAuthenticated())
+        assertTrue(listener.exceptions.any { it.message.orEmpty().contains("audience") })
+    }
+
+    @Test
+    fun `an expired ID token is rejected`() {
+        val now = System.currentTimeMillis() / 1000
+        signInWithIdToken("exp" to now - 3600, "iat" to now - 7200)
+
         assertFalse(client().isAuthenticated())
     }
 }
