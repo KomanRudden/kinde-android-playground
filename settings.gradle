@@ -1,0 +1,37 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+        mavenLocal()
+    }
+}
+
+rootProject.name = "KindeAndroidPlayground"
+include ':app'
+
+// By default the playground builds the SDK from the checkout next to it, so every
+// run tests the code on disk. Pass -PkindeSdkVersion=2.2.0 (or set it in
+// gradle.properties) to build against a published artifact instead.
+def sdkVersion = providers.gradleProperty("kindeSdkVersion").orNull
+def sdkPath = providers.gradleProperty("kindeSdkPath").orElse("../kinde-sdk-android").get()
+if (!sdkVersion) {
+    def sdkDir = new File(settingsDir, "$sdkPath/sdk")
+    if (!sdkDir.isDirectory()) {
+        throw new GradleException(
+            "Kinde SDK checkout not found at ${sdkDir.canonicalPath}. Clone kinde-sdk-android next to " +
+            "this project, pass -PkindeSdkPath=/path/to/kinde-sdk-android, or use a published " +
+            "version with -PkindeSdkVersion=2.2.0."
+        )
+    }
+    include ':sdk'
+    project(':sdk').projectDir = sdkDir
+}

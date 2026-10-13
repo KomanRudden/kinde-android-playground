@@ -1,0 +1,22 @@
+buildscript {
+    ext {
+        // Read by the SDK module when it is built from source (see settings.gradle).
+        // Keep these in step with kinde-sdk-android/build.gradle.
+        compile_version = 36
+        sdk_version = "2.2.0"
+        kotlin_version = "2.4.20"
+    }
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath "com.android.tools.build:gradle:9.4.1"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath "org.jetbrains.kotlin:compose-compiler-gradle-plugin:$kotlin_version"
+    }
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.layout.buildDirectory
+}

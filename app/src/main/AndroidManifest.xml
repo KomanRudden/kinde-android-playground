@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+      allowBackup=false and the extraction rules keep the SDK's token store
+      (shared_prefs/app_prefs_secure_*.xml) out of cloud backups and device
+      transfers. The SDK does not set this for you.
+    -->
+    <application
+        android:name=".PlaygroundApp"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
+        android:icon="@drawable/ic_launcher"
+        android:roundIcon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="false"
+        android:theme="@style/Theme.Playground">
+
+        <!-- Read by the SDK when PLAYGROUND_CONFIG_MODE=manifest. Values come from .env. -->
+        <meta-data android:name="au.kinde.domain" android:value="${kindeDomain}" />
+        <meta-data android:name="au.kinde.clientId" android:value="${kindeClientId}" />
+        <meta-data android:name="au.kinde.audience" android:value="${kindeAudience}" />
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!--
+              Invitation links: kindeplayground://invite?invitation_code=...
+              KindeSDK reads invitation_code from the launching intent. This uses its
+              own scheme because AppAuth claims every URL on the redirect scheme.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="kindeplayground" android:host="invite" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".ui.SecondActivity"
+            android:exported="false" />
+    </application>
+
+</manifest>

@@ -1,0 +1,199 @@
+plugins {
+    id 'com.android.application'
+    id 'kotlin-android'
+    id 'org.jetbrains.kotlin.plugin.compose'
+}
+
+// ---------------------------------------------------------------------------
+// Configuration comes from ../.env (see .env.example). Real environment
+// variables win over the file. Only the values listed in APP_KEYS are compiled
+// into the APK; the Management API credentials stay on your machine and are
+// passed to the host-side live tests only.
+// ---------------------------------------------------------------------------
+def envFile = rootProject.file('.env')
+def dotEnv = [:]
+if (envFile.isFile()) {
+    envFile.eachLine { raw ->
+        def line = raw.trim()
+        if (!line || line.startsWith('#') || !line.contains('=')) return
+        def idx = line.indexOf('=')
+        def key = line.substring(0, idx).trim()
+        def value = line.substring(idx + 1).trim()
+        if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+            value = value.substring(1, value.length() - 1)
+        }
+        dotEnv[key] = value
+    }
+}
+def env = { String key, String fallback = '' ->
+    def fromProcess = System.getenv(key)
+    (fromProcess != null && !fromProcess.isEmpty()) ? fromProcess : (dotEnv[key] ?: fallback)
+}
+// Accept "https://your-business.kinde.com/" as well as the bare host the SDK wants.
+def kindeDomain = env('KINDE_DOMAIN').replaceFirst('^https?://', '').replaceAll('/+$', '')
+def redirectScheme = env('KINDE_REDIRECT_SCHEME', 'com.kinde.playground')
+def quote = { String s -> '"' + s.replace('\\', '\\\\').replace('"', '\\"') + '"' }
+
+def APP_KEYS = [
+    KINDE_CLIENT_ID            : env('KINDE_CLIENT_ID'),
+    KINDE_AUDIENCE             : env('KINDE_AUDIENCE'),
+    PLAYGROUND_CONFIG_MODE     : env('PLAYGROUND_CONFIG_MODE', 'programmatic'),
+    PLAYGROUND_SCOPES          : env('PLAYGROUND_SCOPES', 'openid offline email profile'),
+    PLAYGROUND_DEMO_PERMISSION : env('PLAYGROUND_DEMO_PERMISSION', 'read:reports'),
+    PLAYGROUND_DEMO_ROLE       : env('PLAYGROUND_DEMO_ROLE', 'admin'),
+    PLAYGROUND_DEMO_FLAG       : env('PLAYGROUND_DEMO_FLAG', 'beta_dashboard'),
+    PLAYGROUND_DEMO_STRING_FLAG: env('PLAYGROUND_DEMO_STRING_FLAG', 'theme'),
+    PLAYGROUND_DEMO_INT_FLAG   : env('PLAYGROUND_DEMO_INT_FLAG', 'max_items'),
+    PLAYGROUND_DEMO_ENTITLEMENT: env('PLAYGROUND_DEMO_ENTITLEMENT', 'pro_reports'),
+    PLAYGROUND_DEMO_ORG_CODE   : env('PLAYGROUND_DEMO_ORG_CODE'),
+    PLAYGROUND_CONNECTION_ID   : env('PLAYGROUND_CONNECTION_ID'),
+    PLAYGROUND_PRICING_TABLE   : env('PLAYGROUND_PRICING_TABLE'),
+]
+def allowMutations = env('PLAYGROUND_ALLOW_MUTATIONS', 'false').toBoolean()
+def debugReveal = env('PLAYGROUND_DEBUG', 'false').toBoolean()
+
+def sdkVersion = providers.gradleProperty("kindeSdkVersion").orNull
+
+android {
+    namespace 'com.kinde.playground'
+    compileSdk compile_version
+
+    defaultConfig {
+        applicationId 'com.kinde.playground'
+        minSdk 26
+        targetSdk compile_version
+        versionCode 1
+        versionName '1.0'
+
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+
+        // AppAuth's RedirectUriReceiverActivity registers this scheme. It must match
+        // the callback and logout URLs registered in Kinde.
+        manifestPlaceholders = [
+            appAuthRedirectScheme: redirectScheme,
+            kindeDomain          : kindeDomain,
+            kindeClientId        : APP_KEYS.KINDE_CLIENT_ID,
+            kindeAudience        : APP_KEYS.KINDE_AUDIENCE,
+        ]
+
+        buildConfigField 'String', 'KINDE_DOMAIN', quote(kindeDomain)
+        buildConfigField 'String', 'KINDE_REDIRECT_SCHEME', quote(redirectScheme)
+        APP_KEYS.each { k, v -> buildConfigField 'String', k, quote(v) }
+        buildConfigField 'boolean', 'PLAYGROUND_ALLOW_MUTATIONS', allowMutations.toString()
+        buildConfigField 'boolean', 'PLAYGROUND_DEBUG', debugReveal.toString()
+        buildConfigField 'String', 'SDK_SOURCE', quote(sdkVersion ? "maven:com.kinde:android-sdk:$sdkVersion" : "source:${providers.gradleProperty('kindeSdkPath').orElse('../kinde-sdk-android').get()}")
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+        // Same app with R8 on, signed with the debug key: shows whether the SDK's
+        // consumer ProGuard rules keep everything Gson and Retrofit need.
+        minified {
+            initWith debug
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            matchingFallbacks = ['release']
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    buildFeatures {
+        buildConfig = true
+        compose = true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+            all {
+                // Host-only: the live tests read the Management API credentials from
+                // .env here. They are never compiled into the APK.
+                systemProperty 'playground.envFile', envFile.absolutePath
+                systemProperty 'playground.live', providers.gradleProperty('live').orElse('false').get()
+                testLogging {
+                    events 'failed', 'skipped'
+                    exceptionFormat 'full'
+                }
+                maxHeapSize = '2g'
+            }
+        }
+    }
+
+    // KnownIssue (strict expected-failure marker) is shared by the JVM and emulator suites.
+    sourceSets {
+        test.java.srcDirs += 'src/sharedTest/java'
+        androidTest.java.srcDirs += 'src/sharedTest/java'
+    }
+
+    packaging {
+        resources {
+            excludes += ['/META-INF/{AL2.0,LGPL2.1}', 'META-INF/LICENSE*', 'META-INF/NOTICE*']
+        }
+    }
+}
+
+// SDK 2.2.0 depends on lifecycle-process 2.11.0, whose version constraints pull every
+// lifecycle artifact to 2.11.0, including lifecycle-runtime-compose, which Compose UI
+// depends on and which needs compileSdk 37. Without this, a Compose app on
+// compileSdk 36 fails checkDebugAarMetadata as soon as it adds the SDK. Pinning the
+// compose artifact back keeps this app on the API level most projects use today.
+configurations.configureEach {
+    resolutionStrategy {
+        force 'androidx.lifecycle:lifecycle-runtime-compose:2.10.0'
+        force 'androidx.lifecycle:lifecycle-runtime-compose-android:2.10.0'
+    }
+}
+
+dependencies {
+    if (sdkVersion) {
+        implementation "com.kinde:android-sdk:$sdkVersion"
+    } else {
+        implementation project(':sdk')
+    }
+
+    implementation platform('androidx.compose:compose-bom:2026.06.01')
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.material:material-icons-extended'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    debugImplementation 'androidx.compose.ui:ui-tooling'
+    implementation 'androidx.activity:activity-compose:1.13.0'
+    implementation 'androidx.core:core-ktx:1.17.0'
+    implementation 'androidx.lifecycle:lifecycle-process:2.11.0'
+    implementation 'androidx.work:work-runtime-ktx:2.12.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0'
+
+    // The SDK declares these as implementation dependencies; the playground uses
+    // them directly for setup checks and to inspect what the SDK stored.
+    implementation 'net.openid:appauth:0.11.1'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'com.squareup.retrofit2:retrofit:3.0.0'
+    implementation 'com.google.code.gson:gson:2.11.0'
+
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.17'
+    testImplementation 'androidx.test:core:1.7.0'
+    testImplementation 'androidx.test.ext:junit:1.3.0'
+    // Same OkHttp line the SDK ships with, so the contract tests exercise the real stack.
+    testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+    testImplementation 'com.squareup.okhttp3:okhttp-tls:4.12.0'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0'
+
+    androidTestImplementation platform('androidx.compose:compose-bom:2026.06.01')
+    androidTestImplementation 'androidx.compose.ui:ui-test-junit4'
+    debugImplementation 'androidx.compose.ui:ui-test-manifest'
+    androidTestImplementation 'androidx.test.ext:junit:1.3.0'
+    androidTestImplementation 'androidx.test:runner:1.7.0'
+    androidTestImplementation 'androidx.test:rules:1.7.0'
+    androidTestImplementation 'androidx.test.uiautomator:uiautomator:2.4.0'
+}
