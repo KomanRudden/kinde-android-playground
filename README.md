@@ -135,11 +135,13 @@ From reading the SDK (v2.2.0, `c2f1f9b`) and confirmed by the tests named. Sever
 
 ### High
 
-1. **Tokens at rest are effectively unencrypted.** `Store` derives the AES key from the domain name (padded to 16
-   bytes) and encrypts every value with one stored IV. Anyone with the prefs file (a backup, a rooted device)
-   decrypts the session, refresh token included, with public information. Use an Android Keystore key
-   (or Tink/EncryptedSharedPreferences) and a fresh IV per value. The SDK also ships no backup rules, so apps
-   that leave `allowBackup` on send the file to the cloud. → `StorageTest`, Security audit page.
+1. **Tokens at rest are effectively unencrypted.** *Fixed on `kinde-sdk-android` branch `fix/secure-token-storage`.*
+   In 2.2.0, `Store` derives the AES key from the domain name (padded to 16 bytes) and encrypts every value with
+   one stored IV, so anyone with the prefs file (a backup, a rooted device) decrypts the session, refresh token
+   included, with public information. The fix uses AES-256-GCM with a key generated in the Android Keystore, a
+   fresh IV per value, and migrates 2.2.0 values on first read (verified on the emulator with a real session).
+   The SDK still ships no backup rules, so apps should keep `allowBackup` off. → `StorageTest`,
+   `OnDeviceSdkTest`, Security audit page.
 2. **PKCE is off by default, no nonce, no ID token validation.** `authorize()` calls `setCodeVerifier(null)`
    unless `GrantType.PKCE` is passed, so `login()` sends no code challenge (RFC 8252 requires PKCE for native
    apps); `setNonce(null)` disables the nonce; and the SDK replaces AppAuth's token exchange with its own, which
@@ -149,7 +151,7 @@ From reading the SDK (v2.2.0, `c2f1f9b`) and confirmed by the tests named. Sever
    `TokenRepository` only parses OAuth errors from 2xx bodies; non-2xx becomes a generic error with
    `error = null`, so the `invalid_grant` / "401" check in `getToken` never matches. The scheduled refresh then
    retries every 10 s forever, reporting `TokenException` each time. → `TokenRefreshTest`, `LiveKindeTest`.
-4. **Race that corrupts stored data.** `Store.getCipher()` creates the IV lazily without synchronisation. Two
+4. **Race that corrupts stored data.** *Fixed by the same branch* (per-value IVs, one lock around storage crypto). In 2.2.0, `Store.getCipher()` creates the IV lazily without synchronisation. Two
    first writes on different threads (the JWKS callback on the main thread and the code exchange on a
    background thread, on a fresh install) each create one; the value encrypted with the losing IV no longer
    decrypts (first block garbage). If it's the JWKS, `isAuthenticated()` is false on every launch until the app's

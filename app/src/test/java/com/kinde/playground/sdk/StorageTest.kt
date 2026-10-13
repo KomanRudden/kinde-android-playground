@@ -52,13 +52,13 @@ class StorageTest : SdkTestBase() {
     }
 
     @Test
-    @KnownIssue("The AES key is the domain name padded to 16 bytes, so anyone with the prefs file (backup, rooted device) can decrypt the session, including the refresh token")
     fun `the session cannot be decrypted with only the public domain name`() {
         val issued = seedSession()
         val domain = kinde.domain
 
+        // The 2.2.0 attack: AES key = domain padded to 16 bytes, IV stored beside the values.
         val key = ByteArray(16) { i -> domain.getOrNull(i)?.code?.toByte() ?: Byte.MIN_VALUE }
-        val iv = Base64.decode(raw(domain, "iv"), Base64.NO_WRAP)
+        val iv = raw(domain, "iv")?.let { Base64.decode(it, Base64.NO_WRAP) } ?: ByteArray(16)
         val decrypted = runCatching {
             val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
             cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(iv))
@@ -69,7 +69,6 @@ class StorageTest : SdkTestBase() {
     }
 
     @Test
-    @KnownIssue("Every value is encrypted with one stored IV, so equal plaintexts produce equal ciphertexts")
     fun `encrypting the same value twice gives different ciphertexts`() {
         val store = Store(context, "iv.kinde.invalid")
         store.saveState("same")
@@ -80,7 +79,6 @@ class StorageTest : SdkTestBase() {
     }
 
     @Test
-    @KnownIssue("The IV is created lazily without synchronisation: two first writes on different threads (e.g. JWKS callback and token exchange) can each create one, leaving a value that no longer decrypts")
     fun `concurrent first writes both stay readable`() {
         val corrupted = (1..40).count { i ->
             val domain = "race$i.kinde.invalid"

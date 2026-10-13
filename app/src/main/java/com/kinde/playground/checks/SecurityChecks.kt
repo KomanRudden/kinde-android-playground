@@ -107,15 +107,23 @@ object SecurityChecks {
         val state = prefValue(xml, "auth_state")
         val keys = prefValue(xml, "keys")
         val sample = state ?: keys
-        if (iv != null && sample != null) {
-            val decrypted = decryptWithDomainOnly(config.domain, iv, sample)
-            val readable = decrypted != null && decrypted.trimStart().startsWith("{")
-            checks += Check(g, "Encryption key", "Tries to decrypt the ${if (state != null) "saved session" else "saved keys"} using only the public domain name.",
-                if (readable) Outcome.FAILED else Outcome.PASSED, Judge.NO_HTTP,
-                if (readable) "Decrypted ${decrypted.length} characters of JSON${if (state != null) " including the refresh token" else ""}. The SDK's AES key is the domain name, so this is obfuscation, not encryption. A Keystore-backed key would stop a copied file from being read."
-                else "Could not decrypt with the domain alone.")
-            checks += Check(g, "IV reuse", "Reads the IV stored beside the ciphertext.", Outcome.WARN, Judge.NO_HTTP,
-                "Every value is encrypted with the same stored IV, so identical plaintexts give identical ciphertexts (AES-CBC with a fixed IV).")
+        val what = if (state != null) "saved session" else "saved keys"
+        when {
+            sample == null -> Unit
+            sample.startsWith("k1:") -> checks += Check(g, "Encryption key", "Reads how the $what is encrypted.", Outcome.PASSED, Judge.NO_HTTP,
+                "AES-256-GCM with a key held in the Android Keystore and a fresh IV per value. A copy of this file can't be read off the device.")
+            sample.startsWith("s1:") -> checks += Check(g, "Encryption key", "Reads how the $what is encrypted.", Outcome.WARN, Judge.NO_HTTP,
+                "AES-256-GCM with a random software key: the Android Keystore wasn't available on this device. Safer than the old scheme, but the key sits in app storage.")
+            iv != null -> {
+                val decrypted = decryptWithDomainOnly(config.domain, iv, sample)
+                val readable = decrypted != null && decrypted.trimStart().startsWith("{")
+                checks += Check(g, "Encryption key", "Tries to decrypt the $what using only the public domain name.",
+                    if (readable) Outcome.FAILED else Outcome.PASSED, Judge.NO_HTTP,
+                    if (readable) "Decrypted ${decrypted.length} characters of JSON${if (state != null) " including the refresh token" else ""}. The SDK's AES key is the domain name, so this is obfuscation, not encryption. A Keystore-backed key would stop a copied file from being read."
+                    else "Could not decrypt with the domain alone.")
+                checks += Check(g, "IV reuse", "Reads the IV stored beside the ciphertext.", Outcome.WARN, Judge.NO_HTTP,
+                    "Every value is encrypted with the same stored IV, so identical plaintexts give identical ciphertexts (AES-CBC with a fixed IV).")
+            }
         }
         return checks
     }
