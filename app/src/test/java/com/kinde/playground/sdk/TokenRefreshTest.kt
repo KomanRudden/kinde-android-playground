@@ -2,7 +2,9 @@ package com.kinde.playground.sdk
 
 import au.kinde.sdk.model.TokenType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -65,7 +67,6 @@ class TokenRefreshTest : SdkTestBase() {
     }
 
     @Test
-    @KnownIssue("A revoked refresh token (HTTP 400 invalid_grant) is not recognised: the SDK only parses OAuth errors from 2xx bodies, so it never signs out and retries every 10s, reporting TokenException each time")
     fun `a rejected refresh token signs the user out`() {
         dueSession()
         kinde.validRefreshTokens.clear()
@@ -111,5 +112,53 @@ class TokenRefreshTest : SdkTestBase() {
 
         assertTrue("exceptions: ${listener.exceptions.map { it.message }}", heard)
         assertTrue(kinde.tokenRequests().isEmpty())
+    }
+
+    @Test
+    fun `a rejected refresh token clears the session without opening the browser`() {
+        installFakeBrowser()
+        dueSession()
+        kinde.validRefreshTokens.clear()
+        val f = facade()
+
+        foreground()
+        awaitRefresh()
+        assertTrue(awaitCondition { listener.logoutCount == 1 })
+
+        assertFalse(client().isAuthenticated())
+        assertNull(client().getRefreshToken())
+        assertNull("session removed from storage", store().getState())
+        assertNull("no end-session tab mid-use", org.robolectric.Shadows.shadowOf(f.activity).nextStartedActivityForResult)
+        assertTrue(listener.exceptions.any { it.message.orEmpty().contains("invalid_grant") })
+    }
+
+    @Test
+    fun `a temporary server error keeps the user signed in`() {
+        val old = dueSession()
+        kinde.overrides["/oauth2/token"] = { okhttp3.mockwebserver.MockResponse().setResponseCode(503).setBody("<html>maintenance</html>") }
+
+        facade()
+        foreground()
+        awaitRefresh()
+        assertTrue(awaitCondition { listener.exceptionNames().contains("TokenException") })
+        idle(500)
+
+        assertEquals(0, listener.logoutCount)
+        assertEquals(old.refresh, client().getRefreshToken())
+        assertTrue("one attempt, then backing off", kinde.tokenRequests().size == 1)
+    }
+
+    @Test
+    fun `a rejected refresh token hit by an API call also signs out`() {
+        val old = seedSession()
+        facade()
+        kinde.validAccessTokens.remove(old.access)
+        kinde.validRefreshTokens.clear()
+
+        val profile = onBackground { client().getUser() }
+
+        assertNull(profile)
+        assertTrue(awaitCondition { listener.logoutCount == 1 })
+        assertFalse(client().isAuthenticated())
     }
 }

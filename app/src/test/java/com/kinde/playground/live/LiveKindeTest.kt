@@ -141,12 +141,31 @@ class LiveKindeTest {
     }
 
     @Test
-    fun `an invalid refresh token gets HTTP 400 invalid_grant, which the SDK does not parse`() {
+    fun `an invalid refresh token gets an HTTP 400 invalid_grant from Kinde`() {
         assumeTrue("KINDE_CLIENT_ID is not set.", clientId.isNotBlank())
-        val resp = postForm("$base/oauth2/token", mapOf("grant_type" to "refresh_token", "refresh_token" to "invalid-${System.nanoTime()}", "client_id" to clientId))
-        println("Token endpoint answered an invalid refresh token with HTTP ${resp.status}: ${resp.json?.optString("error")}")
-        assertTrue("4xx", resp.status in 400..499)
-        assertNotNull("OAuth error body", resp.json?.optString("error")?.takeIf { it.isNotBlank() })
+        val resp = postForm("$base/oauth2/token", mapOf("grant_type" to "refresh_token", "refresh_token" to wellFormedFakeRefreshToken(), "client_id" to clientId))
+        println("Token endpoint answered an unknown refresh token with HTTP ${resp.status}: ${resp.json?.optString("error")}")
+        assertEquals(400, resp.status)
+        assertEquals("invalid_grant", resp.json?.optString("error"))
+    }
+
+    @Test
+    fun `the SDK's token request recognises Kinde's rejection of a refresh token`() {
+        assumeTrue("KINDE_CLIENT_ID is not set.", clientId.isNotBlank())
+        val config = net.openid.appauth.AuthorizationServiceConfiguration(
+            android.net.Uri.parse("$base/oauth2/auth"), android.net.Uri.parse("$base/oauth2/token")
+        )
+        val request = net.openid.appauth.TokenRequest.Builder(config, clientId)
+            .setGrantType("refresh_token").setRefreshToken(wellFormedFakeRefreshToken()).build()
+        val repository = au.kinde.sdk.token.TokenRepository(
+            ApiClient("$base/").createService(au.kinde.sdk.token.TokenApi::class.java), "live-test"
+        )
+        var result: Pair<net.openid.appauth.TokenResponse?, net.openid.appauth.AuthorizationException?>? = null
+        // Token requests refuse the main thread, which is Robolectric's test thread.
+        Thread { result = repository.getToken(net.openid.appauth.AuthState(config), request) }.apply { start(); join() }
+
+        println("SDK read Kinde's answer as error=${result!!.second?.error} description=${result!!.second?.errorDescription}")
+        assertEquals("invalid_grant", result!!.second?.error)
     }
 
     private fun invalidTokenStatus(path: String): Int {
@@ -164,6 +183,18 @@ class LiveKindeTest {
     @KnownIssue("The Account API answers a missing, invalid or expired token with HTTP 400 TOKEN_ERROR; the SDK only refreshes on 403, so forceApi calls and entitlements never recover from an expired token")
     fun `the Account API answers an invalid token with a status the SDK refreshes on`() {
         assertEquals(403, invalidTokenStatus("account_api/v1/roles"))
+    }
+
+    /**
+     * A random token shaped like a Kinde refresh token (two 43-character base64url
+     * halves). Kinde answers a revoked or expired one with invalid_grant; an
+     * obviously malformed string gets invalid_request instead, which isn't what
+     * an app ever holds.
+     */
+    private fun wellFormedFakeRefreshToken(): String {
+        val enc = java.util.Base64.getUrlEncoder().withoutPadding()
+        val half = { enc.encodeToString(java.security.SecureRandom().let { r -> ByteArray(32).also { r.nextBytes(it) } }) }
+        return half() + "." + half()
     }
 
     // -- Management API (M2M) -----------------------------------------------------------------------
