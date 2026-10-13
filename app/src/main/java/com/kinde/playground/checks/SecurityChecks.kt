@@ -158,10 +158,14 @@ object SecurityChecks {
         val checks = mutableListOf<Check>()
         checks += when {
             !authed -> Check(g, "isAuthenticated() and expiry", "Compares isAuthenticated() with the token's exp.", Outcome.INFO, Judge.NO_HTTP_TOKEN, "Signed out.")
-            left != null && left <= 0 -> Check(g, "isAuthenticated() and expiry", "Compares isAuthenticated() with the token's exp.", Outcome.FAILED, Judge.NO_HTTP_TOKEN,
-                "isAuthenticated() is true but the access token expired ${-left}s ago. The SDK checks the signature only, not exp, iss or aud.")
+            left != null && left <= 0 -> Check(g, "isAuthenticated() and expiry", "Compares isAuthenticated() with the token's exp.",
+                if (client.getRefreshToken().isNullOrBlank()) Outcome.FAILED else Outcome.WARN, Judge.NO_HTTP_TOKEN,
+                if (client.getRefreshToken().isNullOrBlank())
+                    "isAuthenticated() is true but the access token expired ${-left}s ago and there is no refresh token. SDK 2.2.0 checks the signature only, not exp, iss or aud."
+                else
+                    "The access token expired ${-left}s ago and isAuthenticated() is true. A refresh token is present, so the SDK should renew it; if this persists, refresh is failing.")
             else -> Check(g, "isAuthenticated() and expiry", "Compares isAuthenticated() with the token's exp.", Outcome.INFO, Judge.NO_HTTP_TOKEN,
-                "Signed in, token valid for ${left}s. Note: isAuthenticated() verifies the signature only; it would stay true after exp until a refresh fails.")
+                "Signed in, token valid for ${left}s.")
         }
         return checks
     }

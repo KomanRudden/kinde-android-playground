@@ -167,7 +167,7 @@ From reading the SDK (v2.2.0, `c2f1f9b`) and confirmed by the tests named. Sever
 
 ### Medium
 
-7. **`isAuthenticated()` checks the signature only**: not `exp`, `iss` or `aud`. An expired token reads as signed
+7. **`isAuthenticated()` checks the signature only** *(fixed on `kinde-sdk-android` branch `fix/is-authenticated-claims`: also checks issuer, audience, and expiry unless a refresh token can renew it)*: not `exp`, `iss` or `aud`. An expired token reads as signed
    in until a refresh fails. → `SessionRestoreTest`.
 8. **Key rotation breaks sessions.** Verification uses `keys.firstOrNull()` and ignores the token's `kid`, and the
    cached JWKS is never refreshed. When Kinde publishes a second key or rotates, users read as signed out until
