@@ -52,6 +52,14 @@ class FakeKinde : AutoCloseable {
     val validRefreshTokens: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf())
 
     var clientId = "playground_test_client"
+
+    /** Nonce of the authorization request being completed; Kinde copies it into the ID token. */
+    @Volatile
+    var pendingNonce: String? = null
+
+    /** Lets a test tamper with the ID token issued by the next code exchange. */
+    @Volatile
+    var idTokenOverrides: Map<String, Any?> = emptyMap()
     var accessTokenLifetimeSec = 3600L
     var orgCode = "org_test"
     var permissions = listOf("read:reports", "write:reports")
@@ -183,7 +191,12 @@ class FakeKinde : AutoCloseable {
     private fun tokenEndpoint(request: RecordedRequest): MockResponse {
         val form = form(request)
         return when (form["grant_type"]) {
-            "authorization_code" -> json(tokenJson(issue()))
+            "authorization_code" -> {
+                val nonce = pendingNonce
+                val idClaims = idClaims() + (if (nonce != null) mapOf("nonce" to nonce) else emptyMap()) + idTokenOverrides
+                val issued = issue().let { it.copy(id = mint(idClaims)) }
+                json(tokenJson(issued))
+            }
             "refresh_token" -> {
                 val presented = form["refresh_token"]
                 if (presented == null || !validRefreshTokens.remove(presented)) {

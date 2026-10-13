@@ -124,7 +124,7 @@ class OnDeviceSdkTest {
         ActivityScenario.launch(MainActivity::class.java).use {
             val run = SecurityChecks.run(context, probes = true)
             // These describe SDK design issues reported in the README, not leaks in this app.
-            val sdkDesign = setOf("Encryption key", "PKCE", "isAuthenticated() and expiry")
+            val sdkDesign = setOf("Encryption key", "isAuthenticated() and expiry")
             assertEquals(failures(run, sdkDesign), 0, run.checks.count { it.outcome == Outcome.FAILED && it.name !in sdkDesign })
             val logs = run.checks.first { it.name == "No tokens in logcat" }
             assertTrue(logs.result, logs.outcome != Outcome.FAILED)

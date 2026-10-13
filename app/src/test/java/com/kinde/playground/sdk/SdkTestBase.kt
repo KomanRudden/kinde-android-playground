@@ -239,6 +239,7 @@ abstract class SdkTestBase {
     /** Completes the browser step: Kinde redirected back with an authorization code. */
     protected fun deliverAuthorizationCode(facade: Facade, started: Intent, code: String = "code_from_kinde") {
         val request = authRequest(started)
+        kinde.pendingNonce = request.nonce
         val data = AuthorizationResponse.Builder(request).setAuthorizationCode(code).setState(request.state).build().toIntent()
         deliverResult(facade, started, Activity.RESULT_OK, data)
     }

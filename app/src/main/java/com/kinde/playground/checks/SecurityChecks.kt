@@ -134,11 +134,11 @@ object SecurityChecks {
             Check(g, "PKCE", "Looks for a code challenge on the last authorization request.",
                 if (request.codeVerifier != null) Outcome.PASSED else Outcome.FAILED, Judge.NO_HTTP,
                 if (request.codeVerifier != null) "PKCE (${request.codeVerifierChallengeMethod}) protected the authorization code."
-                else "No PKCE. The SDK only adds a code challenge for login(type = GrantType.PKCE); the default login() sends none, so an intercepted code can be redeemed. RFC 8252 requires PKCE for native apps."),
+                else "No PKCE: an intercepted code can be redeemed. SDK 2.2.0 only adds a code challenge for login(type = GrantType.PKCE); later versions do it by default unless GrantType.NONE is passed. RFC 8252 requires PKCE for native apps."),
             Check(g, "Nonce", "Looks for a nonce on the last authorization request.",
                 if (request.nonce != null) Outcome.PASSED else Outcome.WARN, Judge.NO_HTTP,
                 if (request.nonce != null) "A nonce bound the ID token to this request."
-                else "No nonce: the SDK calls setNonce(null), and it doesn't validate the ID token itself, so ID token replay isn't detected."),
+                else "No nonce: SDK 2.2.0 calls setNonce(null) and doesn't validate the ID token, so ID token replay isn't detected."),
             Check(g, "State", "Looks for the state parameter.",
                 if (request.state != null) Outcome.PASSED else Outcome.FAILED, Judge.NO_HTTP,
                 if (request.state != null) "AppAuth generated a state value and checks it on the redirect." else "No state value."),
