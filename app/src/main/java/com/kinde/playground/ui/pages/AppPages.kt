@@ -131,6 +131,7 @@ fun LifecyclePage() {
     )
 }
 
+@Suppress("DEPRECATION") // Demonstrates the deprecated calls on purpose.
 @Composable
 fun ManagementPage() {
     val env = LocalEnv.current
@@ -145,7 +146,7 @@ fun ManagementPage() {
     var email by rememberSaveable { mutableStateOf("") }
     var confirm by rememberSaveable { mutableStateOf("") }
 
-    Note("The SDK's getUsers() and createUser() call the Management API (/api/v1/…) with the signed-in user's access token. Kinde's Management API expects a machine-to-machine token, and an M2M secret must never ship in an app. Expect these to fail; the playground's host-side live tests check the same endpoints with an M2M token from your machine.", Outcome.WARN)
+    Note("getUsers() and createUser() are deprecated in newer SDKs. They call the Management API (/api/v1/…) with the signed-in user's access token, but Kinde's Management API only accepts machine-to-machine tokens, and an M2M secret must never ship in an app. Expect these to fail; call the Management API from your backend. The playground's host-side live tests check the same endpoints with an M2M token from your machine.", Outcome.WARN)
 
     SectionCard("getUsers()", "GET /api/v1/users. userId is an Int in the SDK, but Kinde user IDs are strings like kp_….") {
         Field("sort", sort, { sort = it }, placeholder = "name_asc")

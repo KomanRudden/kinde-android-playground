@@ -31,7 +31,7 @@ enum class Page(val title: String, val blurb: String, val icon: ImageVector) {
     ORGS("Organizations", "Current org, memberships, switching and creating orgs", Icons.Outlined.Business),
     BACKGROUND("Background access", "KindeClient from a worker and an OkHttp interceptor", Icons.Outlined.Sync),
     LIFECYCLE("Activities & lifecycle", "One client across activities, rotation and listeners", Icons.Outlined.AccountTree),
-    MANAGEMENT("Management API", "getUsers and createUser through the SDK", Icons.Outlined.AdminPanelSettings),
+    MANAGEMENT("Management API", "getUsers and createUser (deprecated) through the SDK", Icons.Outlined.AdminPanelSettings),
     SECURITY("Security audit", "Storage, PKCE, logs, forged redirects", Icons.Outlined.Security),
     REGRESSION("Regression", "On-device and live checks, plus the host suite results", Icons.AutoMirrored.Outlined.Rule),
     EVENTS("SDK events", "Every SDKListener callback, with its thread", Icons.Outlined.Terminal),

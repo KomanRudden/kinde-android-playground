@@ -274,6 +274,7 @@ class AccountApiTest : SdkTestBase() {
 
     @Test
     @KnownIssue("Every 403 is treated as an expired token, so a permission/scope refusal triggers a needless token refresh")
+    @Suppress("DEPRECATION")
     fun `a 403 for a missing scope does not refresh the session`() {
         signedIn()
         kinde.overrides["/api/v1/users"] = { MockResponse().setResponseCode(403).setBody("""{"errors":[{"code":"FORBIDDEN"}]}""") }

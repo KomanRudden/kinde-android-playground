@@ -204,6 +204,7 @@ class LiveKindeTest {
 
     @Test
     @KnownIssue("The SDK's UsersApi models don't match Kinde's users_response (object with users[], string kp_ ids)")
+    @Suppress("DEPRECATION")
     fun `the SDK's getUsers model parses the real Management API response`() {
         val token = m2mToken
         val users = ApiClient("$mgmtBase/", authNames = arrayOf("kindeBearerAuth")).setBearerToken(token)

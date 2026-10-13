@@ -154,7 +154,7 @@ From reading the SDK (v2.2.0, `c2f1f9b`) and confirmed by the tests named. Sever
    background thread, on a fresh install) each create one; the value encrypted with the losing IV no longer
    decrypts (first block garbage). If it's the JWKS, `isAuthenticated()` is false on every launch until the app's
    data is cleared. Reproduced in 25/40 JVM cold starts and on the emulator. → `StorageTest`, `OnDeviceSdkTest`.
-5. **`getUsers()` cannot work.** It expects a JSON array of `User` with `Int` ids and an `Int` `userId` filter;
+5. **`getUsers()` cannot work.** *Deprecated (with `createUser()`) on `kinde-sdk-android` branch `fix/deprecate-management-calls`; removal planned for the next major version.* It expects a JSON array of `User` with `Int` ids and an `Int` `userId` filter;
    Kinde returns `{code, message, users: [...], next_token}` with `kp_…` string ids, so it always returns null.
    Both Management calls also send the *user's* access token, while the Management API expects an M2M token —
    and M2M secrets must not ship in apps. Consider removing them from the mobile SDK. → `ManagementApiTest`,

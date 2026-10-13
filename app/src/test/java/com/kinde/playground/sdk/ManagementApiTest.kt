@@ -11,6 +11,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** getUsers() and createUser(): the two Management API calls the SDK exposes. */
+@Suppress("DEPRECATION") // Exercises the deprecated calls on purpose.
 class ManagementApiTest : SdkTestBase() {
 
     private fun signedIn() = seedSession().also { facade() }
@@ -58,5 +59,17 @@ class ManagementApiTest : SdkTestBase() {
         assertEquals("Ada", body.getJSONObject("profile").getString("given_name"))
         assertEquals("ada@example.com", body.getJSONArray("identities").getJSONObject(0).getJSONObject("details").getString("email"))
         assertTrue(kinde.requests.last { it.requestUrl?.encodedPath == "/api/v1/user" }.method == "POST")
+    }
+
+    @Test
+    fun `getUsers and createUser are deprecated, pointing apps to a backend`() {
+        val methods = (au.kinde.sdk.KindeSDK::class.java.methods + au.kinde.sdk.KindeClient::class.java.methods)
+            .filter { it.name == "getUsers" || it.name == "createUser" }
+
+        assertTrue(methods.isNotEmpty())
+        methods.forEach { m ->
+            val deprecated = m.getAnnotation(Deprecated::class.java)
+            assertTrue("${m.declaringClass.simpleName}.${m.name}", deprecated?.message.orEmpty().contains("backend"))
+        }
     }
 }

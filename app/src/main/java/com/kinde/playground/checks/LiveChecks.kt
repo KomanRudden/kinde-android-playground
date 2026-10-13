@@ -287,13 +287,14 @@ object LiveChecks {
 
     // -- Management API via the SDK -------------------------------------------------------
 
+    @Suppress("DEPRECATION") // Shows what the deprecated call does against Kinde.
     private fun managementChecks(client: KindeClient): List<Check> {
         val g = "Management API (SDK)"
         return listOf(
             check(g, "getUsers(pageSize = 1)", "Calls GET /api/v1/users with the user's access token.", true, "users",
                 success = { u -> (u as List<*>).let { "${it.size} user(s) came back." } }
             ) { client.getUsers(pageSize = 1) }.let { c ->
-                if (c.outcome == Outcome.FAILED) c.copy(result = c.result + " The Management API expects an M2M token, and the SDK's model expects a JSON array of users with numeric ids; Kinde returns an object with a users array and kp_ string ids. See the README.") else c
+                if (c.outcome == Outcome.FAILED) c.copy(result = c.result + " The Management API expects an M2M token (getUsers() is deprecated in newer SDKs for this reason), and the SDK's model expects a JSON array of users with numeric ids; Kinde returns an object with a users array and kp_ string ids.") else c
             },
         )
     }
