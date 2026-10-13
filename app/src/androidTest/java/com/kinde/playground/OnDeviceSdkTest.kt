@@ -13,7 +13,6 @@ import com.kinde.playground.checks.SecurityChecks
 import com.kinde.playground.checks.SelfChecks
 import com.kinde.playground.checks.SetupChecks
 import com.kinde.playground.core.KindeHub
-import com.kinde.playground.sdk.KnownIssue
 import com.kinde.playground.sdk.KnownIssueRule
 import com.kinde.playground.ui.MainActivity
 import com.kinde.playground.ui.SecondActivity
@@ -63,6 +62,17 @@ class OnDeviceSdkTest {
     }
 
     @Test
+    fun storeEncryptsWithTheAndroidKeystore() {
+        val domain = "keystore-test.kinde.invalid"
+        Store(context, domain).saveState("""{"refreshToken":"rt_device_secret"}""")
+        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(domain.toByteArray()).joinToString("") { "%02x".format(it) }
+        val raw = context.getSharedPreferences("app_prefs_secure_$hash", Context.MODE_PRIVATE).getString("auth_state", null)!!
+        deleteStore(domain)
+        assertTrue("expected a Keystore-encrypted value (k1:), got ${raw.take(3)}", raw.startsWith("k1:"))
+        assertTrue(!raw.contains("rt_device_secret"))
+    }
+
+    @Test
     fun storeRoundTripsOnThisDevice() {
         val store = Store(context, "device-test.kinde.invalid")
         store.saveState("""{"x":1}""")
@@ -75,7 +85,6 @@ class OnDeviceSdkTest {
     }
 
     @Test
-    @KnownIssue("Store creates its IV lazily without synchronisation; concurrent first writes corrupt one of the values on a real device too")
     fun concurrentFirstWritesStayReadable() {
         // Probabilistic on a real device (a few percent per cold start), so keep trying
         // until it shows rather than declaring it fixed after a lucky handful.
