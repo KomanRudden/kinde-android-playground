@@ -87,7 +87,6 @@ class SessionRestoreTest : SdkTestBase() {
     }
 
     @Test
-    @KnownIssue("isAuthenticated() verifies the signature only; an expired access token still counts as signed in")
     fun `expired access token is not authenticated`() {
         val now = System.currentTimeMillis() / 1000
         seedSession(issued = kinde.issue(kinde.claims(extra = mapOf("iat" to now - 7200, "exp" to now - 3600))), refreshToken = null)
@@ -95,6 +94,48 @@ class SessionRestoreTest : SdkTestBase() {
         facade()
 
         assertFalse(client().isAuthenticated())
+    }
+
+    @Test
+    fun `expired access token with a refresh token still counts as signed in`() {
+        // The SDK renews it (e.g. on returning to the foreground); signing the user out would be wrong.
+        val now = System.currentTimeMillis() / 1000
+        seedSession(issued = kinde.issue(kinde.claims(extra = mapOf("iat" to now - 7200, "exp" to now - 3600))))
+
+        facade()
+
+        assertTrue(client().isAuthenticated())
+    }
+
+    @Test
+    fun `token signed by Kinde's key but naming another issuer is not authenticated`() {
+        seedSession(issued = kinde.issue(kinde.claims(extra = mapOf("iss" to "https://evil.example.com"))))
+
+        facade()
+
+        assertFalse(client().isAuthenticated())
+    }
+
+    @Test
+    fun `with an audience configured, a token for another audience is not authenticated`() {
+        resetKindeClient()
+        installMetaData(kinde.domain, kinde.clientId, audience = "https://api.example.com")
+        seedSession(issued = kinde.issue(kinde.claims(extra = mapOf("aud" to listOf("https://other.example.com")))))
+
+        facade()
+
+        assertFalse(client().isAuthenticated())
+    }
+
+    @Test
+    fun `with an audience configured, a token for it is authenticated`() {
+        resetKindeClient()
+        installMetaData(kinde.domain, kinde.clientId, audience = "https://api.example.com")
+        seedSession(issued = kinde.issue(kinde.claims(extra = mapOf("aud" to listOf("https://api.example.com")))))
+
+        facade()
+
+        assertTrue(client().isAuthenticated())
     }
 
     @Test
