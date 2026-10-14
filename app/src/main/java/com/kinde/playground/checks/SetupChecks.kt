@@ -139,7 +139,7 @@ object SetupChecks {
                 GROUP, "Signing keys", "Fetches the JWKS the SDK verifies tokens with.",
                 if (keys.length() == 1) Outcome.PASSED else Outcome.WARN, http,
                 if (keys.length() == 1) "1 key (${liveKids.first()})."
-                else "${keys.length()} keys. The SDK verifies with the first key only and ignores the token's kid, so tokens signed by another key read as signed out."
+                else "${keys.length()} keys, e.g. during a key rotation. SDK 2.2.0 verifies with the first key only and ignores the token's kid, so tokens signed by another key read as signed out; newer SDKs use the kid."
             )
         )
         val stored = runCatching { Store(context, config.domain).getKeys() }.getOrNull()
@@ -155,7 +155,7 @@ object SetupChecks {
             storedKids == liveKids -> Check(GROUP, "Keys cached by the SDK", "Reads the JWKS the SDK saved on this device.", Outcome.PASSED,
                 Judge.NO_HTTP, "The SDK's saved keys match Kinde's current keys.")
             else -> Check(GROUP, "Keys cached by the SDK", "Reads the JWKS the SDK saved on this device.", Outcome.FAILED,
-                Judge.NO_HTTP, "The SDK saved ${storedKids ?: "unreadable keys"} but Kinde now serves $liveKids. The SDK never refreshes saved keys, so sessions will fail verification until the app's data is cleared.")
+                Judge.NO_HTTP, "The SDK saved ${storedKids ?: "unreadable keys"} but Kinde now serves $liveKids. SDK 2.2.0 never refreshes saved keys, so sessions fail verification until the app's data is cleared; newer SDKs refresh them when a token names an unknown key.")
         }
         return checks
     }

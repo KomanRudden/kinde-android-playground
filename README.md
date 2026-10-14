@@ -169,7 +169,7 @@ From reading the SDK (v2.2.0, `c2f1f9b`) and confirmed by the tests named. Sever
 
 7. **`isAuthenticated()` checks the signature only**: not `exp`, `iss` or `aud`. An expired token reads as signed
    in until a refresh fails. → `SessionRestoreTest`.
-8. **Key rotation breaks sessions.** Verification uses `keys.firstOrNull()` and ignores the token's `kid`, and the
+8. **Key rotation breaks sessions.** *(fixed on `kinde-sdk-android` branch `fix/signing-keys`)* Verification uses `keys.firstOrNull()` and ignores the token's `kid`, and the
    cached JWKS is never refreshed. When Kinde publishes a second key or rotates, users read as signed out until
    app data is cleared. → `SessionRestoreTest`; the Dashboard compares cached and live keys.
 9. **Expired tokens on the Account API are never refreshed.** `callApi` refreshes and retries only on 403.
@@ -185,7 +185,7 @@ From reading the SDK (v2.2.0, `c2f1f9b`) and confirmed by the tests named. Sever
     soon as it adds the SDK. The playground pins `lifecycle-runtime-compose` to 2.10.0 (see `app/build.gradle`).
 12. **Logout doesn't revoke the refresh token**, so it stays valid at Kinde if the end-session page fails or the
     logout completes locally. → `LogoutTest`.
-13. **Silent failure on launch.** With a saved session but no cached keys, a failed JWKS fetch (e.g. HTTP 503)
+13. **Silent failure on launch.** *(fixed on `kinde-sdk-android` branch `fix/signing-keys`)* With a saved session but no cached keys, a failed JWKS fetch (e.g. HTTP 503)
     produces no callback at all: non-2xx responses are dropped in `onResponse`. The app gets neither
     `onNewToken` nor `onLogout`. A cold start also fetches the JWKS twice. → `SessionRestoreTest`.
 

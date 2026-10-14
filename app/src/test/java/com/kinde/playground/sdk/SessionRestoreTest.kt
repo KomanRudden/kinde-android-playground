@@ -14,9 +14,9 @@ class SessionRestoreTest : SdkTestBase() {
     fun `fresh install fetches the JWKS and replays onLogout`() {
         facade()
 
-        // Fetched twice on a cold start: once when the client is created and again
-        // when the first facade attaches before the first response has arrived.
-        assertTrue("JWKS fetched", awaitCondition { kinde.count("/.well-known/jwks.json") >= 1 && store().getKeys() != null })
+        assertTrue("JWKS fetched", awaitCondition { store().getKeys() != null })
+        idle()
+        assertEquals("fetched once, not once per facade", 1, kinde.count("/.well-known/jwks.json"))
         assertEquals(1, listener.logoutCount)
         assertTrue(listener.tokens.isEmpty())
         assertFalse(client().isAuthenticated())
@@ -98,7 +98,6 @@ class SessionRestoreTest : SdkTestBase() {
     }
 
     @Test
-    @KnownIssue("Signature check uses the first JWKS key and ignores the token's kid, so key rotation (two keys published) signs users out")
     fun `token signed by the second published key is authenticated`() {
         val next = FakeKinde.SigningKey("key-2")
         kinde.jwks += next
@@ -110,7 +109,6 @@ class SessionRestoreTest : SdkTestBase() {
     }
 
     @Test
-    @KnownIssue("The saved JWKS is never refreshed, so after Kinde rotates keys every new token fails verification until app data is cleared")
     fun `keys are refreshed when a token is signed by a key the SDK has not seen`() {
         // Device cached key-1. Kinde has since rotated to key-2 only.
         val oldKeys = kinde.jwksJson()
@@ -124,6 +122,20 @@ class SessionRestoreTest : SdkTestBase() {
         idle(500)
 
         assertTrue(client().isAuthenticated())
+        assertTrue("the restored session is announced once verified", awaitCondition { listener.tokens.isNotEmpty() })
+        assertTrue(store().getKeys()!!.contains("key-2"))
+    }
+
+    @Test
+    fun `a token naming a key Kinde never publishes refreshes the keys at most once a minute`() {
+        seedSession(issued = kinde.issue(key = FakeKinde.SigningKey("never-published")))
+        facade()
+        idle(300)
+
+        repeat(5) { assertFalse(client().isAuthenticated()) }
+        idle(300)
+
+        assertEquals("one refresh for the unknown key", 1, kinde.count("/.well-known/jwks.json"))
     }
 
     @Test
@@ -137,14 +149,19 @@ class SessionRestoreTest : SdkTestBase() {
     }
 
     @Test
-    @KnownIssue("With a saved session but no cached keys, a failed JWKS fetch (HTTP 503) leaves the listener with no event at all: no onNewToken, onLogout or onException")
-    fun `offline launch with an unverifiable session tells the listener something definite`() {
-        seedSession(keysJson = null)
+    fun `a failed key fetch with a saved session is reported, and the session is announced once keys arrive`() {
+        val issued = seedSession(keysJson = null)
         kinde.overrides["/.well-known/jwks.json"] = { okhttp3.mockwebserver.MockResponse().setResponseCode(503) }
 
         facade()
-        idle(800)
+        assertTrue("the failure is reported, not dropped", awaitCondition { listener.exceptions.any { it.message.orEmpty().contains("HTTP 503") } })
+        assertTrue(listener.tokens.isEmpty())
 
-        assertTrue("expected onNewToken or onLogout", listener.tokens.isNotEmpty() || listener.logoutCount > 0)
+        // Kinde recovers; returning to the foreground retries the fetch.
+        kinde.overrides.remove("/.well-known/jwks.json")
+        foreground()
+
+        assertTrue(awaitCondition { listener.tokens.any { it.token == issued.access } })
+        assertTrue(client().isAuthenticated())
     }
 }

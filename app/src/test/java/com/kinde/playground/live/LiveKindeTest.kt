@@ -137,7 +137,7 @@ class LiveKindeTest {
             assertEquals("RSA", k.keyType)
             assertTrue(k.modulus.isNotBlank() && k.exponent.isNotBlank())
         }
-        println("JWKS: ${keys.keys.size} key(s) ${keys.keys.map { it.keyId }}. The SDK verifies with the first only.")
+        println("JWKS: ${keys.keys.size} key(s) ${keys.keys.map { it.keyId }}.")
     }
 
     @Test
