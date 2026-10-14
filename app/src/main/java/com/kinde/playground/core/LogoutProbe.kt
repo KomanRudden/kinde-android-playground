@@ -58,6 +58,8 @@ object LogoutProbe {
     fun onLogout() {
         val probe = armed ?: return
         armed = null
+        // Time from the sign-out itself: the end-session page can sit open for a while first.
+        val signedOutAt = System.currentTimeMillis()
         thread(name = "logout-probe") {
             // Let the SDK finish whatever it does after logout first.
             Thread.sleep(3_000)
@@ -69,13 +71,13 @@ object LogoutProbe {
                 append(if (calls.isEmpty()) "none" else calls.joinToString { "${it.url.substringAfter("/oauth2/")} ${it.status ?: "—"}" })
                 append("\n\nOffering the old refresh token to Kinde:\n")
             }
-            _result.value = head + "Waiting until ${later(probe.loggedOutFrom + PROBE_AFTER_MS)}…"
-            Thread.sleep((probe.loggedOutFrom + PROBE_AFTER_MS - System.currentTimeMillis()).coerceAtLeast(0))
+            _result.value = head + "Waiting until ${later(signedOutAt + PROBE_AFTER_MS)}…"
+            Thread.sleep((signedOutAt + PROBE_AFTER_MS - System.currentTimeMillis()).coerceAtLeast(0))
             val (status, accepted) = tryOldToken(probe.refreshToken)
-            val after = (System.currentTimeMillis() - probe.loggedOutFrom) / 1000
+            val after = (System.currentTimeMillis() - signedOutAt) / 1000
             val verdict = when (accepted) {
-                false -> "Rejected ${after}s after logout: the old refresh token is dead."
-                true -> "Still accepted ${after}s after logout: anyone holding a copy can keep minting access tokens."
+                false -> "Rejected ${after}s after onLogout: the old refresh token is dead."
+                true -> "Still accepted ${after}s after onLogout: anyone holding a copy can keep minting access tokens."
                 null -> "Couldn't reach Kinde."
             }
             _result.value = head + "${now()}  POST /oauth2/token → $status\n\n$verdict"

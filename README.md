@@ -188,7 +188,7 @@ From reading the SDK (v2.2.0, `c2f1f9b`) and confirmed by the tests named. Sever
 12. **Logout doesn't revoke the refresh token.** *Fixed on `kinde-sdk-android` branch `fix/logout-revoke`.*
     Kinde's end-session page ends the session through the browser's cookie. When that cookie is gone (browser data
     cleared, default browser changed since sign-in), the app signs out but the refresh token stays valid at Kinde:
-    verified live, a copy still minted access tokens 2½ minutes after logout. The fix revokes it at
+    verified live, a copy taken before logout still minted access tokens after it. The fix revokes it at
     `/oauth2/revoke` when logout completes. Kinde applies a revocation within about two minutes, not instantly.
     Try it on the Sign-in lab ("Sign out, then try the old refresh token"). → `LogoutTest`, `LiveKindeTest`.
 13. **Silent failure on launch.** With a saved session but no cached keys, a failed JWKS fetch (e.g. HTTP 503)
