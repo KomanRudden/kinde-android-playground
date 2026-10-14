@@ -44,6 +44,9 @@ class MainActivity : ComponentActivity() {
                 null
             }
         }
+        // The SDK sends no callback for a stored session it can't verify (expired with
+        // no refresh token, unknown signing key), so set the badge from isAuthenticated() too.
+        KindeHub.refresh(this)
         LifecycleStats.onActivityCreated(this)
 
         // Notice token changes the SDK makes without telling the listener.
