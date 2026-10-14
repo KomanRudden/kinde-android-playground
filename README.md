@@ -179,10 +179,10 @@ From reading the SDK (v2.2.0, `c2f1f9b`) and confirmed by the tests named. Sever
    (missing scope) triggers a pointless refresh. → `AccountApiTest`, `LiveKindeTest`.
 10. **Scheduled refreshes don't call `onNewToken`** (`notifyListener = false`), so apps that keep the token from
    the callback hold a stale one. The Events page shows these silent rotations. → `TokenRefreshTest`.
-11. **SDK 2.2.0 forces Compose apps onto compileSdk 37.** `lifecycle-process:2.11.0`'s version constraints pull
+11. **SDK 2.2.0 forces Compose apps onto compileSdk 37.** *(fixed on `kinde-sdk-android` branch `fix/lifecycle-compile-sdk`: lifecycle back to 2.10.0)* `lifecycle-process:2.11.0`'s version constraints pull
     `lifecycle-runtime-compose` (a Compose UI dependency) to 2.11.0, which requires compileSdk 37
     (`minCompileSdk=37` in its AAR metadata). A Compose app on compileSdk 36 fails `checkDebugAarMetadata` as
-    soon as it adds the SDK. The playground pins `lifecycle-runtime-compose` to 2.10.0 (see `app/build.gradle`).
+    soon as it adds the SDK. On this branch the playground no longer needs a workaround.
 12. **Logout doesn't revoke the refresh token**, so it stays valid at Kinde if the end-session page fails or the
     logout completes locally. → `LogoutTest`.
 13. **Silent failure on launch.** With a saved session but no cached keys, a failed JWKS fetch (e.g. HTTP 503)

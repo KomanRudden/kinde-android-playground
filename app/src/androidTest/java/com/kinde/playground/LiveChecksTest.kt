@@ -40,6 +40,11 @@ class LiveChecksTest {
             // foreground. If the token expired meanwhile, wait for that refresh first.
             val secondsLeft = { com.kinde.playground.core.Jwt.decode(client.getToken(au.kinde.sdk.model.TokenType.ACCESS_TOKEN))?.secondsLeft() ?: 0 }
             val expiredAtStart = secondsLeft() <= 0
+            // SDK 2.2.0's isAuthenticated() still reports such a session as signed in.
+            assumeTrue(
+                "The stored session has expired and has no refresh token, so it can't be renewed: sign in again, then run ./scripts/live-test.sh.",
+                !(expiredAtStart && client.getRefreshToken().isNullOrBlank())
+            )
             val deadline = System.currentTimeMillis() + 20_000
             while (secondsLeft() <= 10 && System.currentTimeMillis() < deadline) Thread.sleep(250)
             if (expiredAtStart) {

@@ -142,18 +142,6 @@ android {
     }
 }
 
-// SDK 2.2.0 depends on lifecycle-process 2.11.0, whose version constraints pull every
-// lifecycle artifact to 2.11.0, including lifecycle-runtime-compose, which Compose UI
-// depends on and which needs compileSdk 37. Without this, a Compose app on
-// compileSdk 36 fails checkDebugAarMetadata as soon as it adds the SDK. Pinning the
-// compose artifact back keeps this app on the API level most projects use today.
-configurations.configureEach {
-    resolutionStrategy {
-        force 'androidx.lifecycle:lifecycle-runtime-compose:2.10.0'
-        force 'androidx.lifecycle:lifecycle-runtime-compose-android:2.10.0'
-    }
-}
-
 dependencies {
     if (sdkVersion) {
         implementation "com.kinde:android-sdk:$sdkVersion"
@@ -169,7 +157,7 @@ dependencies {
     debugImplementation 'androidx.compose.ui:ui-tooling'
     implementation 'androidx.activity:activity-compose:1.13.0'
     implementation 'androidx.core:core-ktx:1.17.0'
-    implementation 'androidx.lifecycle:lifecycle-process:2.11.0'
+    implementation 'androidx.lifecycle:lifecycle-process:2.10.0'
     implementation 'androidx.work:work-runtime-ktx:2.12.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0'
 
