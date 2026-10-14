@@ -249,7 +249,6 @@ class AccountApiTest : SdkTestBase() {
     }
 
     @Test
-    @KnownIssue("Kinde's Account API answers an expired token with HTTP 400 TOKEN_ERROR (verified live), but the SDK only refreshes on 403, so forceApi calls throw instead of recovering")
     fun `an expired token on the Account API (HTTP 400) refreshes and retries`() {
         val old = signedIn()
         kinde.validAccessTokens.remove(old.access)
@@ -261,7 +260,6 @@ class AccountApiTest : SdkTestBase() {
     }
 
     @Test
-    @KnownIssue("An expired token answered with the standard HTTP 401 is not refreshed either; the SDK only refreshes on 403")
     fun `a 401 refreshes the token and retries`() {
         val old = signedIn()
         kinde.validAccessTokens.remove(old.access)
@@ -273,7 +271,6 @@ class AccountApiTest : SdkTestBase() {
     }
 
     @Test
-    @KnownIssue("Every 403 is treated as an expired token, so a permission/scope refusal triggers a needless token refresh")
     fun `a 403 for a missing scope does not refresh the session`() {
         signedIn()
         kinde.overrides["/api/v1/users"] = { MockResponse().setResponseCode(403).setBody("""{"errors":[{"code":"FORBIDDEN"}]}""") }
@@ -281,6 +278,32 @@ class AccountApiTest : SdkTestBase() {
         onBackground { client().getUsers(pageSize = 1) }
 
         assertTrue("token requests: ${kinde.tokenRequests().size}", kinde.tokenRequests().isEmpty())
+    }
+
+    @Test
+    fun `a refresh triggered by an API call tells the listener about the new token`() {
+        val old = signedIn()
+        val announced = listener.tokens.size
+        kinde.validAccessTokens.remove(old.access)
+        kinde.rejectStatus = 400
+
+        onBackground { client().getRoles(fresh) }
+        idle()
+
+        val newToken = client().getToken(TokenType.ACCESS_TOKEN)
+        assertNotEquals(old.access, newToken)
+        assertEquals(newToken, listener.tokens.drop(announced).lastOrNull()?.token)
+    }
+
+    @Test
+    fun `a 400 that isn't about the token does not refresh`() {
+        signedIn()
+        kinde.overrides["/account_api/v1/entitlement"] = {
+            MockResponse().setResponseCode(400).setHeader("Content-Type", "application/json").setBody("""{"errors":[{"code":"ENTITLEMENT_NOT_FOUND"}]}""")
+        }
+
+        assertNull(onBackground { client().getEntitlement("no_such_feature") })
+        assertTrue(kinde.tokenRequests().isEmpty())
     }
 
     @Test

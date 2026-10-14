@@ -149,10 +149,12 @@ class LiveKindeTest {
         assertNotNull("OAuth error body", resp.json?.optString("error")?.takeIf { it.isNotBlank() })
     }
 
-    private fun invalidTokenStatus(path: String): Int {
-        val status = get("$base/$path", bearer = "eyJhbGciOiJSUzI1NiJ9.e30.invalid").status
-        println("$path answered an invalid token with HTTP $status. The SDK refreshes and retries only on 403.")
-        return status
+    private fun invalidTokenStatus(path: String): Int = invalidTokenReply(path).status
+
+    private fun invalidTokenReply(path: String): Resp {
+        val resp = get("$base/$path", bearer = "eyJhbGciOiJSUzI1NiJ9.e30.invalid")
+        println("$path answered an invalid token with HTTP ${resp.status}: ${resp.body.take(80)}")
+        return resp
     }
 
     @Test
@@ -161,9 +163,13 @@ class LiveKindeTest {
     }
 
     @Test
-    @KnownIssue("The Account API answers a missing, invalid or expired token with HTTP 400 TOKEN_ERROR; the SDK only refreshes on 403, so forceApi calls and entitlements never recover from an expired token")
-    fun `the Account API answers an invalid token with a status the SDK refreshes on`() {
-        assertEquals(403, invalidTokenStatus("account_api/v1/roles"))
+    fun `the Account API answers an invalid token in a way the SDK refreshes on`() {
+        // The SDK refreshes on 401, and on a 400/403 whose body says TOKEN_ERROR.
+        val reply = invalidTokenReply("account_api/v1/roles")
+        assertTrue(
+            "HTTP ${reply.status}: ${reply.body.take(80)}",
+            reply.status == 401 || (reply.status in listOf(400, 403) && reply.body.contains("TOKEN_ERROR"))
+        )
     }
 
     // -- Management API (M2M) -----------------------------------------------------------------------

@@ -60,8 +60,25 @@ fun BackgroundPage() {
                     workerBusy = false
                 }
             }, enabled = env.config.isConfigured, busy = workerBusy)
+            // Background work after the token has expired: the SDK pauses its own refresh
+            // in the background, so the worker's Account API call meets an expired token.
+            ActionButton("Run after the token expires", {
+                val exp = com.kinde.playground.core.Jwt.decode(KindeHub.accessToken(context))?.exp
+                val delaySec = ((exp ?: 0) - System.currentTimeMillis() / 1000 + 30).coerceAtLeast(0)
+                workerBusy = true
+                worker = "Scheduled in ${delaySec}s, 30s after the access token expires. Put the app in the background now (Home) and come back after."
+                val request = OneTimeWorkRequestBuilder<TokenWorker>()
+                    .setInitialDelay(delaySec, java.util.concurrent.TimeUnit.SECONDS).build()
+                val wm = WorkManager.getInstance(context)
+                wm.enqueue(request)
+                scope.launch {
+                    val info = wm.getWorkInfoByIdFlow(request.id).first { it?.state?.isFinished == true }
+                    worker = info?.outputData?.getString("summary") ?: "Worker finished as ${info?.state}"
+                    workerBusy = false
+                }
+            }, enabled = env.config.isConfigured, busy = workerBusy, secondary = true)
         }
-        worker?.let { CodeBlock(it) }
+        worker?.let { CodeBlock(it, wrap = true) }
     }
     SectionCard("OkHttp interceptor", "How you'd call your own API: an interceptor adds the Kinde access token to every request. Here it calls Kinde's user profile endpoint as a stand-in.") {
         ButtonRow {

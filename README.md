@@ -172,12 +172,12 @@ From reading the SDK (v2.2.0, `c2f1f9b`) and confirmed by the tests named. Sever
 8. **Key rotation breaks sessions.** Verification uses `keys.firstOrNull()` and ignores the token's `kid`, and the
    cached JWKS is never refreshed. When Kinde publishes a second key or rotates, users read as signed out until
    app data is cleared. → `SessionRestoreTest`; the Dashboard compares cached and live keys.
-9. **Expired tokens on the Account API are never refreshed.** `callApi` refreshes and retries only on 403.
+9. **Expired tokens on the Account API are never refreshed.** *(fixed on `kinde-sdk-android` branch `fix/token-refresh`)* `callApi` refreshes and retries only on 403.
    Verified live: Kinde's OAuth profile endpoints answer an invalid token with 403 (so `getUser()` recovers),
    but the Account API answers with **400** `TOKEN_ERROR`, so `getPermissions/getRoles/flags(forceApi)` and
    `getEntitlements()` fail instead of refreshing. A standard 401 isn't handled either, and any genuine 403
    (missing scope) triggers a pointless refresh. → `AccountApiTest`, `LiveKindeTest`.
-10. **Scheduled refreshes don't call `onNewToken`** (`notifyListener = false`), so apps that keep the token from
+10. **Scheduled refreshes don't call `onNewToken`** *(fixed on `kinde-sdk-android` branch `fix/token-refresh`)* (`notifyListener = false`), so apps that keep the token from
    the callback hold a stale one. The Events page shows these silent rotations. → `TokenRefreshTest`.
 11. **SDK 2.2.0 forces Compose apps onto compileSdk 37.** `lifecycle-process:2.11.0`'s version constraints pull
     `lifecycle-runtime-compose` (a Compose UI dependency) to 2.11.0, which requires compileSdk 37

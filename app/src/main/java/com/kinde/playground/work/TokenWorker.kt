@@ -23,14 +23,19 @@ class TokenWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
             return Result.success(workDataOf("summary" to "Not configured."))
         }
         val client = KindeClient.getInstance(applicationContext)
-        val token = client.getToken(TokenType.ACCESS_TOKEN)
+        val before = client.getToken(TokenType.ACCESS_TOKEN)
+        val expiredFor = com.kinde.playground.core.Jwt.decode(before)?.secondsLeft()?.let { -it }
         val permissions = runCatching { client.getPermissions(ApiOptions(forceApi = true, useCache = false)) }
+        val after = client.getToken(TokenType.ACCESS_TOKEN)
         val summary = buildString {
-            append("Thread: ${Thread.currentThread().name}\n")
-            append("isAuthenticated(): ${client.isAuthenticated()}\n")
-            append("Access token: ${Redact.mask(token)}\n")
+            append("Ran at ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())} on ${Thread.currentThread().name}\n")
+            append("Access token before: ${Redact.mask(before)}")
+            if (expiredFor != null && expiredFor > 0) append(" (expired ${expiredFor}s ago)")
+            append("\n")
             append("getPermissions(forceApi): ")
             append(permissions.fold({ "${it.permissions.size} permission(s) in ${it.orgCode.ifBlank { "no org" }}" }, { Redact.error(it) }))
+            append("\n")
+            append("Access token after: ${if (after == before) "unchanged" else "renewed: ${Redact.mask(after)}"}")
         }
         return Result.success(workDataOf("summary" to summary))
     }

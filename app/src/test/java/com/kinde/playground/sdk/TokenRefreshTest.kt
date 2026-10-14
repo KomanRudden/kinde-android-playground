@@ -51,7 +51,6 @@ class TokenRefreshTest : SdkTestBase() {
     }
 
     @Test
-    @KnownIssue("Scheduled refreshes run with notifyListener=false, so onNewToken never fires for them and apps holding the token from onNewToken keep a stale one")
     fun `a scheduled refresh notifies the listener of the new token`() {
         val old = dueSession()
         facade()
@@ -111,5 +110,19 @@ class TokenRefreshTest : SdkTestBase() {
 
         assertTrue("exceptions: ${listener.exceptions.map { it.message }}", heard)
         assertTrue(kinde.tokenRequests().isEmpty())
+    }
+
+    @Test
+    fun `the listener hears every scheduled refresh, not just the first sign-in`() {
+        val old = dueSession()
+        facade()
+        val replayed = listener.tokens.size
+        foreground()
+        awaitRefresh()
+
+        assertTrue(awaitCondition { listener.tokens.size > replayed })
+        val announced = listener.tokens.drop(replayed).map { it.token }
+        assertTrue(old.access !in announced)
+        assertEquals(client().getToken(TokenType.ACCESS_TOKEN), announced.last())
     }
 }
