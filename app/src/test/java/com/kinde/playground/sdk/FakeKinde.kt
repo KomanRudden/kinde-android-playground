@@ -162,6 +162,7 @@ class FakeKinde : AutoCloseable {
     fun paths(): List<String> = requests.map { it.requestUrl?.encodedPath ?: it.path.orEmpty() }
     fun count(path: String) = paths().count { it == path }
     fun tokenRequests() = requests.filter { it.requestUrl?.encodedPath == "/oauth2/token" }
+    fun revokeRequests() = requests.filter { it.requestUrl?.encodedPath == "/oauth2/revoke" }
 
     fun form(request: RecordedRequest): Map<String, String> =
         request.body.clone().readUtf8().split('&').filter { it.contains('=') }.associate {
@@ -182,6 +183,11 @@ class FakeKinde : AutoCloseable {
     private fun route(path: String, request: RecordedRequest): MockResponse = when (path) {
         "/.well-known/jwks.json" -> json(jwksJson())
         "/oauth2/token" -> tokenEndpoint(request)
+        // RFC 7009: 200 whether or not the token was valid.
+        "/oauth2/revoke" -> {
+            form(request)["token"]?.let { validRefreshTokens.remove(it) }
+            MockResponse().setResponseCode(200)
+        }
         else -> if (!authorized(request)) {
             // Kinde's real body for a missing/invalid token on the Account API.
             json(JSONArray(listOf(JSONObject(mapOf("Code" to "TOKEN_ERROR", "Message" to "Missing or invalid token")))), rejectStatus)

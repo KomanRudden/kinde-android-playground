@@ -64,6 +64,7 @@ object KindeHub {
         override fun onLogout() {
             record(EventType.LOGOUT, "Signed out (or no session to restore)")
             _session.value = Session.SIGNED_OUT
+            LogoutProbe.onLogout()
         }
 
         override fun onException(exception: Exception) {

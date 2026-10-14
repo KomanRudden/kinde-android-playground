@@ -100,7 +100,7 @@ fun HowItWorks(code: String, title: String = "How this works") {
 }
 
 @Composable
-fun CodeBlock(text: String, modifier: Modifier = Modifier, background: Boolean = true) {
+fun CodeBlock(text: String, modifier: Modifier = Modifier, background: Boolean = true, wrap: Boolean = false) {
     val status = LocalStatus.current
     SelectionContainer {
         Text(
@@ -110,7 +110,8 @@ fun CodeBlock(text: String, modifier: Modifier = Modifier, background: Boolean =
             modifier = modifier
                 .fillMaxWidth()
                 .then(if (background) Modifier.background(status.codeBg, RoundedCornerShape(10.dp)).padding(12.dp) else Modifier)
-                .horizontalScroll(rememberScrollState()),
+                // Code keeps its lines and scrolls sideways; call results wrap so the whole value is visible.
+                .then(if (wrap) Modifier else Modifier.horizontalScroll(rememberScrollState())),
         )
     }
 }
@@ -222,7 +223,7 @@ fun CallResultView(result: CallResult) {
             Text(result.label, style = CodeStyle, modifier = Modifier.weight(1f))
             Text("${result.durationMs} ms", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        CodeBlock(result.value)
+        CodeBlock(result.value, wrap = true)
         if (result.http.isNotEmpty()) {
             Text("HTTP", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             result.http.forEach { call ->

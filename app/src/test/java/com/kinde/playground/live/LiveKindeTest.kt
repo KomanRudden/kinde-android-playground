@@ -149,6 +149,20 @@ class LiveKindeTest {
         assertNotNull("OAuth error body", resp.json?.optString("error")?.takeIf { it.isNotBlank() })
     }
 
+    @Test
+    fun `the revocation endpoint accepts the request the SDK sends on logout`() {
+        assumeTrue("KINDE_CLIENT_ID is not set.", clientId.isNotBlank())
+        assertEquals("$base/oauth2/revoke", get("$base/.well-known/openid-configuration").json!!.getString("revocation_endpoint"))
+        // RFC 7009: an unknown token is answered with 200, so this checks the request shape and
+        // client authentication without needing a session. A wrong client id is refused.
+        val form = mapOf("token" to "unknown-${System.nanoTime()}", "token_type_hint" to "refresh_token")
+        val ok = postForm("$base/oauth2/revoke", form + ("client_id" to clientId))
+        val wrongClient = postForm("$base/oauth2/revoke", form + ("client_id" to "not-a-client"))
+        println("Revoke answered HTTP ${ok.status} for this app and HTTP ${wrongClient.status} for an unknown client.")
+        assertEquals(200, ok.status)
+        assertEquals(401, wrongClient.status)
+    }
+
     private fun invalidTokenStatus(path: String): Int {
         val status = get("$base/$path", bearer = "eyJhbGciOiJSUzI1NiJ9.e30.invalid").status
         println("$path answered an invalid token with HTTP $status. The SDK refreshes and retries only on 403.")

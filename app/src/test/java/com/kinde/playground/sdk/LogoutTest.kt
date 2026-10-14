@@ -100,13 +100,41 @@ class LogoutTest : SdkTestBase() {
     }
 
     @Test
-    @KnownIssue("logout() never revokes the refresh token, so it stays valid at Kinde if the end-session page fails or the app is signed out locally")
     fun `logout revokes the refresh token`() {
-        seedSession()
+        val issued = seedSession()
         val f = facade()
         deliverResult(f, startLogout(f), Activity.RESULT_OK, Intent())
-        awaitCondition { listener.logoutCount == 1 }
 
-        assertTrue("requests: ${kinde.paths()}", kinde.paths().any { it.contains("revoke") })
+        assertTrue("requests: ${kinde.paths()}", awaitCondition { kinde.revokeRequests().isNotEmpty() })
+        val form = kinde.form(kinde.revokeRequests().single())
+        assertEquals(issued.refresh, form["token"])
+        assertEquals("refresh_token", form["token_type_hint"])
+        assertEquals(kinde.clientId, form["client_id"])
+        assertFalse("Kinde no longer accepts it", issued.refresh in kinde.validRefreshTokens)
+    }
+
+    @Test
+    fun `cancelling the end-session page doesn't revoke anything`() {
+        val issued = seedSession()
+        val f = facade()
+        deliverResult(f, startLogout(f), Activity.RESULT_CANCELED, null)
+        idle()
+        Thread.sleep(300)
+
+        assertTrue("requests: ${kinde.paths()}", kinde.revokeRequests().isEmpty())
+        assertTrue(issued.refresh in kinde.validRefreshTokens)
+    }
+
+    @Test
+    fun `logout still completes when revocation fails`() {
+        seedSession()
+        kinde.overrides["/oauth2/revoke"] = { okhttp3.mockwebserver.MockResponse().setResponseCode(503) }
+        val f = facade()
+        deliverResult(f, startLogout(f), Activity.RESULT_OK, Intent())
+
+        assertTrue(awaitCondition { listener.logoutCount == 1 })
+        assertFalse(client().isAuthenticated())
+        assertNull(store().getState())
+        assertTrue(awaitCondition { kinde.revokeRequests().isNotEmpty() })
     }
 }

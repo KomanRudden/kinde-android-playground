@@ -19,6 +19,7 @@ import au.kinde.sdk.GrantType
 import au.kinde.sdk.store.Store
 import com.kinde.playground.checks.Outcome
 import com.kinde.playground.core.KindeHub
+import com.kinde.playground.core.LogoutProbe
 import com.kinde.playground.core.Redact
 import com.kinde.playground.ui.LocalEnv
 import com.kinde.playground.ui.components.*
@@ -91,6 +92,16 @@ fun SignInPage() {
             ActionButton("logout()", { guard("logout") { sdk?.logout() } }, enabled = sdk != null, secondary = true)
             ActionButton("refreshState()", { sdk?.refreshState(); KindeHub.refresh(context) }, enabled = sdk != null, secondary = true)
         }
+    }
+
+    val probe by LogoutProbe.result.collectAsState()
+    SectionCard("Is the refresh token dead after logout?", "Keeps a copy of the refresh token, calls logout(), then, 2½ minutes later, offers the copy to Kinde's token endpoint once, the way a leaked copy could be used. (Kinde applies a revocation within about two minutes, and using the token rotates it, so it is tried only once.)") {
+        ButtonRow {
+            ActionButton("Sign out, then try the old refresh token", {
+                guard("logout") { if (LogoutProbe.arm(context)) sdk?.logout() }
+            }, enabled = sdk != null && session == KindeHub.Session.SIGNED_IN, secondary = true)
+        }
+        probe?.let { CodeBlock(it, wrap = true) }
     }
 
     SectionCard("Grant type", "PKCE adds a code challenge. Newer SDKs use it by default (null); 2.2.0 only with GrantType.PKCE. NONE opts out. Compare them on the Security page after signing in.") {
