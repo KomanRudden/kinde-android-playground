@@ -8,6 +8,7 @@ import au.kinde.sdk.model.Flag
 import au.kinde.sdk.model.TokenType
 import com.kinde.playground.config.PlaygroundConfig
 import com.kinde.playground.core.Jwt
+import com.kinde.playground.core.Redact
 import com.kinde.playground.core.KindeHub
 import com.kinde.playground.core.SdkLog
 import com.kinde.playground.checks.Judge.shown
@@ -105,6 +106,14 @@ object LiveChecks {
             if (!refresh.isNullOrBlank()) "A refresh token is present. The SDK refreshes 10s before the access token expires while the app is in the foreground."
             else "No refresh token. Add the offline scope, and allow refresh tokens on the Kinde application.")
 
+        checks += check(g, "refreshToken()", "Refreshes the access token now with POST /oauth2/token.", true, "a refreshed token",
+            success = { _ -> "Kinde issued a new access token ${Redact.mask(client.getToken(TokenType.ACCESS_TOKEN))}." }
+        ) { client.refreshToken().takeIf { it } }
+
+        checks += check(g, "Typed claims", "Reads exp and permissions with getClaimValue().", false,
+            success = { v -> "exp is a ${v!!.javaClass.simpleName}; permissions is a ${client.getClaimValue("permissions")?.javaClass?.simpleName ?: "missing claim"}." }
+        ) { client.getClaimValue("exp") as? Number }
+
         checks += check(g, "Claims helper", "Reads sub, email and names with getUserDetails().", false,
             success = { d -> (d as au.kinde.sdk.model.UserDetails).let { "Signed in as ${it.email.ifBlank { "(no email claim)" }} (${it.id})." } }
         ) { client.getUserDetails().takeIf { it.id.isNotBlank() } }
@@ -120,7 +129,9 @@ object LiveChecks {
                 success = { p -> (p as au.kinde.sdk.api.model.UserProfile).let { "Profile ${it.id}: ${it.firstName.orEmpty()} ${it.lastName.orEmpty()} <${it.preferredEmail.orEmpty()}>." } }
             ) { client.getUser() },
             check(g, "getUserProfileV2()", "Calls GET /oauth2/v2/user_profile.", true, "the v2 user profile",
-                success = { p -> (p as au.kinde.sdk.api.model.UserProfileV2).let { "Profile ${it.id}: ${it.name.orEmpty()}, updated ${it.updatedAt}." } }
+                success = { p -> (p as au.kinde.sdk.api.model.UserProfileV2).let {
+                    "Profile ${it.id}: ${it.name.orEmpty()} <${it.email ?: "no email"}${if (it.emailVerified == true) ", verified" else ""}>, updated ${it.updatedAt}."
+                } }
             ) { client.getUserProfileV2() },
         )
     }
@@ -261,7 +272,7 @@ object LiveChecks {
         var keys: List<String>? = null
         val all = check(g, "getEntitlements()", "Calls GET /account_api/v1/entitlements.", true, "entitlements",
             success = { e -> (e as au.kinde.sdk.api.model.entitlements.EntitlementsResponse).let {
-                "${it.data.entitlements.size} entitlement(s), plans ${it.data.plans.map { p -> p.key }}. More pages: ${it.metadata.hasMore} (the SDK can't request them)."
+                "${it.data.entitlements.size} entitlement(s), plans ${it.data.plans.map { p -> p.key }}. More pages: ${it.metadata.hasMore}."
             } }
         ) { client.getEntitlements().also { r -> keys = r?.data?.entitlements?.map { it.featureKey } } }
         // Asking for a feature the org isn't entitled to gets HTTP 400, so only ask for one that exists.
@@ -282,7 +293,20 @@ object LiveChecks {
                 } }
             ) { client.getEntitlement(key) }
         }
-        return listOf(all, one)
+        val paged = check(g, "getEntitlements(pageSize = 1)", "Pages through GET /account_api/v1/entitlements one at a time with the starting_after cursor.", true, "entitlement pages",
+            nullIsFailure = false,
+            success = { n -> "Read ${n ?: 0} page(s) of one; the last page has no cursor." }
+        ) {
+            var pages = 0
+            var cursor: String? = null
+            do {
+                val page = client.getEntitlements(pageSize = 1, startingAfter = cursor) ?: return@check null
+                pages++
+                cursor = page.metadata.nextPageStartingAfter
+            } while (page.metadata.hasMore && cursor != null && pages < 20)
+            pages
+        }
+        return listOf(all, paged, one)
     }
 
     // -- Management API via the SDK -------------------------------------------------------

@@ -51,14 +51,16 @@ class AccountApiTest : SdkTestBase() {
     }
 
     @Test
-    @KnownIssue("UserProfileV2 drops email, email_verified, picture, sub and preferred_username, which Kinde's v2 profile returns")
-    fun `getUserProfileV2 exposes the email Kinde returns`() {
+    fun `getUserProfileV2 exposes the email and the rest of Kinde's v2 profile`() {
         signedIn()
 
         val profile = onBackground { client().getUserProfileV2() }!!
 
-        val fields = profile.javaClass.declaredFields.map { it.name }
-        assertTrue("UserProfileV2 fields: $fields", "email" in fields)
+        assertEquals("kp_test_user", profile.sub)
+        assertEquals("tester@example.com", profile.email)
+        assertEquals(true, profile.emailVerified)
+        assertEquals("https://example.com/p.png", profile.picture)
+        assertEquals("tester", profile.preferredUsername)
     }
 
     @Test
@@ -171,7 +173,6 @@ class AccountApiTest : SdkTestBase() {
     }
 
     @Test
-    @KnownIssue("Integer flags from getAllFlags(forceApi) are Doubles (Gson), while the token path gives Ints")
     fun `integer flags have the same type from the token and the API`() {
         signedIn()
 
@@ -196,11 +197,19 @@ class AccountApiTest : SdkTestBase() {
     }
 
     @Test
-    @KnownIssue("On the token path a flag of the wrong type returns null and ignores the default; the API path returns the default")
     fun `token flag of the wrong type returns the default`() {
         signedIn()
 
         assertEquals(false, client().getBooleanFlag("theme", false))
+        assertNull("no default", client().getBooleanFlag("theme"))
+    }
+
+    @Test
+    fun `a flag of the wrong type gives the same answer from the token and the API`() {
+        signedIn()
+
+        assertEquals(onBackground { client().getBooleanFlag("theme", false, fresh) }, client().getBooleanFlag("theme", false))
+        assertEquals(onBackground { client().getIntegerFlag("theme", 7, fresh) }, client().getIntegerFlag("theme", 7))
     }
 
     // -- Billing -----------------------------------------------------------------------------------
@@ -220,13 +229,31 @@ class AccountApiTest : SdkTestBase() {
     }
 
     @Test
-    @KnownIssue("EntitlementsMetadata.nextPageStartingAfter is a non-null String but is null on the last page, so Kotlin callers get an NPE")
     fun `last page of entitlements is safe to read`() {
         signedIn()
 
         val metadata = onBackground { client().getEntitlements() }!!.metadata
-        val cursor: String = metadata.nextPageStartingAfter
-        assertNotNull(cursor.length)
+        val cursor: String? = metadata.nextPageStartingAfter
+
+        assertFalse(metadata.hasMore)
+        assertNull(cursor)
+    }
+
+    @Test
+    fun `entitlements can be read page by page`() {
+        signedIn()
+
+        val first = onBackground { client().getEntitlements(pageSize = 1) }!!
+        val second = onBackground { client().getEntitlements(pageSize = 1, startingAfter = first.metadata.nextPageStartingAfter) }!!
+
+        assertEquals(listOf("pro_reports"), first.data.entitlements.map { it.featureKey })
+        assertTrue(first.metadata.hasMore)
+        assertEquals(listOf("seats"), second.data.entitlements.map { it.featureKey })
+        assertFalse(second.metadata.hasMore)
+        assertNull(second.metadata.nextPageStartingAfter)
+        val sent = kinde.requests.last { it.requestUrl?.encodedPath == "/account_api/v1/entitlements" }.requestUrl!!
+        assertEquals("1", sent.queryParameter("page_size"))
+        assertEquals(first.metadata.nextPageStartingAfter, sent.queryParameter("starting_after"))
     }
 
     // -- Expired tokens --------------------------------------------------------------------------------

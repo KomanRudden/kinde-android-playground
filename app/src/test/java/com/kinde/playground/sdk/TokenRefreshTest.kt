@@ -2,6 +2,7 @@ package com.kinde.playground.sdk
 
 import au.kinde.sdk.model.TokenType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -51,7 +52,6 @@ class TokenRefreshTest : SdkTestBase() {
     }
 
     @Test
-    @KnownIssue("Scheduled refreshes run with notifyListener=false, so onNewToken never fires for them and apps holding the token from onNewToken keep a stale one")
     fun `a scheduled refresh notifies the listener of the new token`() {
         val old = dueSession()
         facade()
@@ -110,6 +110,41 @@ class TokenRefreshTest : SdkTestBase() {
         val heard = awaitCondition(4_000) { listener.exceptions.any { it.message.orEmpty().contains("Token refresh stopped") } }
 
         assertTrue("exceptions: ${listener.exceptions.map { it.message }}", heard)
+        assertTrue(kinde.tokenRequests().isEmpty())
+    }
+
+    // -- refreshToken() ----------------------------------------------------------------------------
+
+    @Test
+    fun `refreshToken refreshes now and announces the new token`() {
+        val old = seedSession()
+        facade()
+        val replayed = listener.tokens.size
+
+        val refreshed = onBackground { client().refreshToken() }
+
+        assertTrue(refreshed)
+        assertEquals(old.refresh, kinde.form(kinde.tokenRequests().single())["refresh_token"])
+        val now = client().getToken(TokenType.ACCESS_TOKEN)
+        assertNotEquals(old.access, now)
+        assertTrue(awaitCondition { listener.tokens.drop(replayed).any { it.token == now } })
+    }
+
+    @Test
+    fun `refreshToken on the main thread does nothing and reports WrongThreadException`() {
+        seedSession()
+        facade()
+
+        assertFalse(client().refreshToken())
+        assertTrue(kinde.tokenRequests().isEmpty())
+        assertTrue(listener.exceptionNames().toString(), "WrongThreadException" in listener.exceptionNames())
+    }
+
+    @Test
+    fun `refreshToken without a session returns false without a request`() {
+        facade()
+
+        assertFalse(onBackground { client().refreshToken() })
         assertTrue(kinde.tokenRequests().isEmpty())
     }
 }

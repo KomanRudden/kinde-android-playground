@@ -52,6 +52,19 @@ class ClaimsAndConfigTest : SdkTestBase() {
     }
 
     @Test
+    fun `getClaimValue keeps each claim's JSON type`() {
+        seedSession()
+        facade()
+
+        assertTrue(client().getClaimValue("exp") is Number)
+        assertEquals("tester@example.com", client().getClaimValue("email", TokenType.ID_TOKEN))
+        assertEquals(listOf("read:reports", "write:reports"), client().getClaimValue("permissions"))
+        val flags = client().getClaimValue("feature_flags") as Map<*, *>
+        assertEquals(mapOf("t" to "i", "v" to 25), flags["max_items"])
+        assertNull(client().getClaimValue("not_a_claim"))
+    }
+
+    @Test
     fun `signed out, claim helpers return empty values rather than throwing`() {
         facade()
 
@@ -59,6 +72,7 @@ class ClaimsAndConfigTest : SdkTestBase() {
         assertTrue(client().getPermissions().permissions.isEmpty())
         assertTrue(client().getAllFlags().isEmpty())
         assertNull(client().getClaim("sub").value)
+        assertNull(client().getClaimValue("sub"))
     }
 
     @Test

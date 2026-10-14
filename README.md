@@ -193,19 +193,24 @@ From reading the SDK (v2.2.0, `c2f1f9b`) and confirmed by the tests named. Sever
 
 ### Low
 
-14. **Flag inconsistencies.** On the token path a flag of the wrong type returns null and ignores the default;
-    the API path returns the default. Integer flags from `getAllFlags(forceApi)` are `Double` (Gson) but `Int`
-    from the token. → `AccountApiTest`.
-15. **Model gaps.** `UserProfileV2` drops `email`, `email_verified`, `picture`, `sub`, `preferred_username`;
-    `EntitlementsMetadata.nextPageStartingAfter` is a non-null `String` that is null on the last page (NPE for
-    Kotlin callers); `getEntitlements()` can't paginate; `getClaim()` returns every value as a string.
-16. **Threading is undocumented.** `onNewToken` after sign-in arrives on a background thread; network methods
-    return null (and report `WrongThreadException`) on the main thread. → `LoginFlowTest`.
-17. **No public refresh method**, so apps can't refresh after the app was backgrounded past expiry (the schedule
-    pauses in the background) other than by making an API call that gets a 403.
-18. **Consumer ProGuard rules only keep the entitlements models.** `Keys`, `UserProfile`, the Account API
-    responses and the request models rely on Gson's and Retrofit's own rules. The `minified` build type checks
-    this: `./gradlew :app:installMinified`, then run the setup checks and sign in. Not yet confirmed either way.
+14. **Flag inconsistencies.** *Fixed on `kinde-sdk-android` branch `fix/low-issues`.* On the token path a
+    flag of the wrong type returned null and ignored the default, while the API path returned the default; integer
+    flags from `getAllFlags(forceApi)` were `Double` (Gson) but `Int` from the token. Both paths now return the
+    default for a wrong type, and integer flags are `Int` from either. → `AccountApiTest`.
+15. **Model gaps.** *Fixed on `fix/low-issues`.* `UserProfileV2` now has `sub`, `email`, `emailVerified`,
+    `picture` and `preferredUsername`; `EntitlementsMetadata.nextPageStartingAfter` is nullable (it is null on the
+    last page); `getEntitlements(pageSize, startingAfter)` pages; `getClaimValue()` returns a claim with its JSON
+    type (`getClaim()` still returns text). → `AccountApiTest`, `ClaimsAndConfigTest`.
+16. **Threading was undocumented.** *Fixed on `fix/low-issues`* (KDoc on `KindeClient`, `KindeSDK` and
+    `SDKListener`, and a Threading section in the SDK README). `onNewToken` after sign-in arrives on a background
+    thread; network methods return null (and report `WrongThreadException`) on the main thread. → `LoginFlowTest`.
+17. **No public refresh method.** *Fixed on `fix/low-issues`:* `refreshToken()` refreshes now (off the main
+    thread) and calls `onNewToken`. Try it on the Tokens page. → `TokenRefreshTest`.
+18. **Minified apps never count as signed in.** *Fixed on `fix/low-issues`.* The consumer rules only kept the
+    entitlements models, so R8 removed `au.kinde.sdk.keys.Key` and the field holding the signing keys: every token
+    failed signature verification and `isAuthenticated()` was always false (verified with the `minified` build on
+    the emulator: a saved session showed as signed out). The rules now keep every Gson model, and
+    `scripts/regression.sh` fails if R8 drops them.
 
 ## How it's built
 

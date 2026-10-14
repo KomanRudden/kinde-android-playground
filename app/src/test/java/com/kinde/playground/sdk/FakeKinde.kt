@@ -216,6 +216,7 @@ class FakeKinde : AutoCloseable {
             "id" to "kp_test_user", "sub" to "kp_test_user", "provided_id" to null, "name" to "Test User",
             "given_name" to "Test", "family_name" to "User", "updated_at" to 1700000000,
             "email" to "tester@example.com", "email_verified" to true, "picture" to "https://example.com/p.png",
+            "preferred_username" to "tester",
         )))
         "/account_api/v1/permissions" -> json(JSONObject(mapOf("success" to true, "data" to mapOf(
             "org_code" to orgCode,
@@ -228,14 +229,22 @@ class FakeKinde : AutoCloseable {
         "/account_api/v1/feature_flags" -> json(JSONObject(mapOf("success" to true, "data" to mapOf(
             "feature_flags" to apiFlags.entries.mapIndexed { i, (k, v) -> mapOf("id" to "flag_$i", "key" to k, "name" to k, "type" to v.first, "value" to v.second) },
         ))))
-        "/account_api/v1/entitlements" -> json(JSONObject(mapOf(
-            "data" to mapOf(
-                "org_code" to orgCode,
-                "plans" to listOf(mapOf("key" to "pro", "name" to "Pro", "subscribed_on" to "2026-01-01T00:00:00Z")),
-                "entitlements" to listOf(entitlement("pro_reports"), entitlement("seats", max = 10)),
-            ),
-            "metadata" to mapOf("has_more" to false, "next_page_starting_after" to null),
-        )))
+        "/account_api/v1/entitlements" -> {
+            // Kinde pages with page_size and a starting_after cursor (the last id of the previous page).
+            val all = listOf(entitlement("pro_reports"), entitlement("seats", max = 10))
+            val url = request.requestUrl!!
+            val from = url.queryParameter("starting_after")?.let { after -> all.indexOfFirst { it["id"] == after } + 1 } ?: 0
+            val page = all.drop(from).take(url.queryParameter("page_size")?.toInt() ?: all.size)
+            val hasMore = from + page.size < all.size
+            json(JSONObject(mapOf(
+                "data" to mapOf(
+                    "org_code" to orgCode,
+                    "plans" to listOf(mapOf("key" to "pro", "name" to "Pro", "subscribed_on" to "2026-01-01T00:00:00Z")),
+                    "entitlements" to page,
+                ),
+                "metadata" to mapOf("has_more" to hasMore, "next_page_starting_after" to (if (hasMore) page.last()["id"] else JSONObject.NULL)),
+            )))
+        }
         "/account_api/v1/entitlement" -> json(JSONObject(mapOf(
             "data" to mapOf("org_code" to orgCode, "entitlement" to entitlement(request.requestUrl?.queryParameter("key") ?: "unknown")),
             "metadata" to mapOf<String, Any>(),

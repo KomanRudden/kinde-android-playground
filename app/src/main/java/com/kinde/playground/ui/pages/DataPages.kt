@@ -102,6 +102,7 @@ fun TokensPage() {
     val refresh = remember(revision, now / 5000) { sdk?.getRefreshToken() }
     val decoded = Jwt.decode(access)
     val left = decoded?.secondsLeft(now)
+    val runner = rememberRunner()
 
     SectionCard("Access token", "getToken(TokenType.ACCESS_TOKEN). Masked; ${if (env.config.debug) "PLAYGROUND_DEBUG allows revealing it." else "set PLAYGROUND_DEBUG=true to allow revealing it."}") {
         KeyValue("Value", if (reveal && env.config.debug) access.orEmpty() else Redact.mask(access), mono = true)
@@ -117,11 +118,14 @@ fun TokensPage() {
         KeyValue("ID token aud", Jwt.decode(id)?.audiences?.joinToString().orEmpty().ifBlank { "—" }, mono = true)
         KeyValue("Refresh token", if (refresh == null) "none (needs the offline scope)" else Redact.mask(refresh), mono = true)
     }
-    SectionCard("Refresh", "The SDK has no public refresh method. It refreshes 10s before expiry while the app is in the foreground, pauses in the background, and retries every 10s on failure. A scheduled refresh doesn't call onNewToken: the Events page notes when the token changes silently.") {
+    SectionCard("Refresh", "The SDK refreshes 10s before expiry while the app is in the foreground, pauses in the background, and retries every 10s on failure. refreshToken() refreshes now (off the main thread) and calls onNewToken. refreshState() only re-reads the saved session.") {
         ButtonRow {
+            Call(runner, "refreshToken()", sdk != null) { sdk?.refreshToken() }
+            Call(runner, "refreshToken() on main", sdk != null, secondary = true, onMain = true) { sdk?.refreshToken() }
             ActionButton("refreshState()", { sdk?.refreshState(); KindeHub.refresh(context) }, enabled = sdk != null, secondary = true)
             ActionButton("clearCache()", { sdk?.clearCache(); KindeHub.note("clearCache()") }, enabled = sdk != null, secondary = true)
         }
+        Results(runner, "refreshToken()", "refreshToken() on main")
         if (left != null && left <= 0 && sdk?.isAuthenticated() == true) {
             Note("The access token has expired but isAuthenticated() still returns true: the SDK checks the signature, not exp.", Outcome.FAILED)
         }
@@ -154,7 +158,7 @@ fun ClaimsPage() {
     var useId by rememberSaveable { mutableStateOf(true) }
     val type = if (useId) TokenType.ID_TOKEN else TokenType.ACCESS_TOKEN
 
-    SectionCard("getClaim()", "Values come back as strings, whatever their JSON type: exp is \"1730000000\", a list is its JSON text.") {
+    SectionCard("getClaim() and getClaimValue()", "getClaim() returns text whatever the JSON type: exp is \"1730000000\", a list is its JSON text. getClaimValue() keeps the type: a number, a List, a Map.") {
         Field("claim", name, { name = it })
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(selected = useId, onClick = { useId = true }, label = { Text("ID_TOKEN") })
@@ -162,8 +166,10 @@ fun ClaimsPage() {
         }
         ButtonRow {
             Call(runner, "getClaim()", sdk != null) { sdk?.getClaim(name.trim(), type) }
+            Call(runner, "getClaimValue()", sdk != null) { sdk?.getClaimValue(name.trim(), type)?.let { "${it.javaClass.simpleName}: $it" } }
             listOf("sub", "exp", "org_code", "permissions", "feature_flags").forEach { c ->
                 Call(runner, "getClaim(\"$c\")", sdk != null, secondary = true) { sdk?.getClaim(c, TokenType.ACCESS_TOKEN) }
+                Call(runner, "getClaimValue(\"$c\")", sdk != null, secondary = true) { sdk?.getClaimValue(c)?.let { "${it.javaClass.simpleName}: $it" } }
             }
         }
         runner.results.values.forEach { CallResultView(it) }
@@ -179,6 +185,8 @@ fun ClaimsPage() {
         """
         val email = sdk.getClaim("email", TokenType.ID_TOKEN).value as String?
         val exp = sdk.getClaim("exp").value      // "1730000000" — a String
+        val expiry = sdk.getClaimValue("exp") as Number?          // 1730000000
+        val roles = sdk.getClaimValue("roles") as List<*>?        // [{id, key, name}, …]
         """
     )
 }
@@ -241,7 +249,7 @@ fun FlagsPage() {
     val options = ApiOptions(forceApi = forceApi, useCache = useCache)
     val src = if (forceApi) " [API]" else " [token]"
 
-    SectionCard("Typed helpers", "getBooleanFlag, getStringFlag and getIntegerFlag return the default when the flag is missing. On the token path a flag of another type returns null instead of the default; on the API path it returns the default.") {
+    SectionCard("Typed helpers", "getBooleanFlag, getStringFlag and getIntegerFlag return the default when the flag is missing or of another type, from the token and from the API alike.") {
         ApiToggles(forceApi, { forceApi = it }, useCache, { useCache = it })
         Field("flag code", code, { code = it })
         Field("default", default, { default = it })
@@ -257,7 +265,7 @@ fun FlagsPage() {
         }
         runner.results.filterKeys { !it.startsWith("getAllFlags") }.values.forEach { CallResultView(it) }
     }
-    SectionCard("All flags", "Token flags carry a type letter (b, s, i). API integer flags arrive as Double through Gson.") {
+    SectionCard("All flags", "Token flags carry a type letter (b, s, i). Integer flags are Ints from either source.") {
         ButtonRow {
             Call(runner, "getAllFlags() [token]", sdk != null) { sdk?.getAllFlags() }
             Call(runner, "getAllFlags() [API]", sdk != null, secondary = true) { sdk?.getAllFlags(ApiOptions(forceApi = true, useCache = false)) }
@@ -286,13 +294,23 @@ fun BillingPage() {
     var pricing by rememberSaveable { mutableStateOf(env.config.pricingTableKey.orEmpty()) }
     var plan by rememberSaveable { mutableStateOf("") }
 
-    SectionCard("Entitlements", "Account API, for the user's current org. getEntitlements() returns the first page only: the SDK takes no page size or cursor.") {
+    SectionCard("Entitlements", "Account API, for the user's current org. getEntitlements(pageSize, startingAfter) pages with the cursor from metadata.nextPageStartingAfter.") {
         Field("feature key", key, { key = it })
         ButtonRow {
             Call(runner, "getEntitlements()", sdk != null) { sdk?.getEntitlements() }
+            Call(runner, "getEntitlements(pageSize = 1), every page", sdk != null, secondary = true) {
+                val pages = mutableListOf<String>()
+                var cursor: String? = null
+                do {
+                    val page = sdk?.getEntitlements(pageSize = 1, startingAfter = cursor) ?: break
+                    pages += "page ${pages.size + 1}: ${page.data.entitlements.map { it.featureKey }}, hasMore=${page.metadata.hasMore}"
+                    cursor = page.metadata.nextPageStartingAfter
+                } while (page.metadata.hasMore && cursor != null && pages.size < 20)
+                pages.joinToString("\n")
+            }
             Call(runner, "getEntitlement()", sdk != null, secondary = true) { sdk?.getEntitlement(key.trim()) }
         }
-        Results(runner, "getEntitlements()", "getEntitlement()")
+        Results(runner, "getEntitlements()", "getEntitlements(pageSize = 1), every page", "getEntitlement()")
     }
     SectionCard("Plan selection", "register() with a pricing table shows plans during sign-up.") {
         Field("pricingTableKey", pricing, { pricing = it })
@@ -306,6 +324,9 @@ fun BillingPage() {
     HowItWorks(
         """
         val all = withContext(Dispatchers.IO) { sdk.getEntitlements() }   // EntitlementsResponse?
+        val next = all?.metadata?.nextPageStartingAfter?.let {             // null on the last page
+            withContext(Dispatchers.IO) { sdk.getEntitlements(pageSize = 10, startingAfter = it) }
+        }
         val one = withContext(Dispatchers.IO) { sdk.getEntitlement("pro_reports") }
         val max = one?.data?.entitlement?.entitlementLimitMax
         """

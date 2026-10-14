@@ -43,6 +43,15 @@ run ./gradlew :app:testDebugUnitTest -Plive=$LIVE --console=plain -q
 if [[ $QUICK -eq 0 ]]; then
   step "3/4 Builds: debug and minified (R8 with only the SDK's consumer rules)"
   run ./gradlew :app:assembleDebug :app:assembleMinified --console=plain -q
+  # R8 must keep the fields Gson fills by reflection. Without them the SDK can't read
+  # the signing keys and a minified app never counts as signed in.
+  SEEDS=app/build/outputs/mapping/minified/seeds.txt
+  for kept in "au.kinde.sdk.keys.Keys: java.util.List keys" "au.kinde.sdk.keys.Key: java.lang.String modulus"; do
+    if ! grep -qF "$kept" "$SEEDS" 2>/dev/null; then
+      echo "Minified build: R8 did not keep '$kept'. Check kinde-sdk-android/sdk/consumer-rules.pro."
+      STATUS=1
+    fi
+  done
 
   step "4/4 Instrumented tests on the emulator"
   rm -rf app/build/outputs/androidTest-results
