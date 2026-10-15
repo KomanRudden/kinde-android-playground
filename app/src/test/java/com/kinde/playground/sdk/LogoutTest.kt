@@ -137,4 +137,34 @@ class LogoutTest : SdkTestBase() {
         assertNull(store().getState())
         assertTrue(awaitCondition { kinde.revokeRequests().isNotEmpty() })
     }
+
+    @Test
+    fun `a revocation that didn't get through is retried on the next launch`() {
+        val issued = seedSession()
+        kinde.overrides["/oauth2/revoke"] = { okhttp3.mockwebserver.MockResponse().setResponseCode(503) }
+        val f = facade()
+        deliverResult(f, startLogout(f), Activity.RESULT_OK, Intent())
+        assertTrue(awaitCondition { kinde.revokeRequests().isNotEmpty() })
+        idle()
+        assertNotNull("kept for a retry", store().getPendingRevocation())
+
+        kinde.overrides.remove("/oauth2/revoke")
+        resetKindeClient()
+        client()
+
+        assertTrue(awaitCondition { kinde.revokeRequests().size == 2 })
+        assertEquals(issued.refresh, kinde.form(kinde.revokeRequests().last())["token"])
+        assertTrue(awaitCondition { store().getPendingRevocation() == null })
+        assertFalse(issued.refresh in kinde.validRefreshTokens)
+    }
+
+    @Test
+    fun `the token is revoked for the client that issued it, even after a restart`() {
+        seedSession(clientId = "client_from_login_override")
+        val f = facade()
+        deliverResult(f, startLogout(f), Activity.RESULT_OK, Intent())
+
+        assertTrue(awaitCondition { kinde.revokeRequests().isNotEmpty() })
+        assertEquals("client_from_login_override", kinde.form(kinde.revokeRequests().single())["client_id"])
+    }
 }

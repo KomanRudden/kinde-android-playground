@@ -147,8 +147,9 @@ abstract class SdkTestBase {
         issued: FakeKinde.Issued = kinde.issue(),
         keysJson: String? = kinde.jwksJson(),
         refreshToken: String? = issued.refresh,
+        clientId: String = kinde.clientId,
     ): FakeKinde.Issued {
-        val request = AuthorizationRequest.Builder(serviceConfig(), kinde.clientId, ResponseTypeValues.CODE, Uri.parse(LOGIN_REDIRECT))
+        val request = AuthorizationRequest.Builder(serviceConfig(), clientId, ResponseTypeValues.CODE, Uri.parse(LOGIN_REDIRECT))
             .setScopes("openid", "offline", "email", "profile").build()
         val response = AuthorizationResponse.Builder(request).setAuthorizationCode("seeded_code").setState(request.state).build()
         val state = AuthState(response, null)
