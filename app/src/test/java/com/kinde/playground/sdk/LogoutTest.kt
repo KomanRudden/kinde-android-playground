@@ -146,7 +146,7 @@ class LogoutTest : SdkTestBase() {
         deliverResult(f, startLogout(f), Activity.RESULT_OK, Intent())
         assertTrue(awaitCondition { kinde.revokeRequests().isNotEmpty() })
         idle()
-        assertNotNull("kept for a retry", store().getPendingRevocation())
+        assertNotNull("kept for a retry", store().getPendingRevocations())
 
         kinde.overrides.remove("/oauth2/revoke")
         resetKindeClient()
@@ -154,7 +154,7 @@ class LogoutTest : SdkTestBase() {
 
         assertTrue(awaitCondition { kinde.revokeRequests().size == 2 })
         assertEquals(issued.refresh, kinde.form(kinde.revokeRequests().last())["token"])
-        assertTrue(awaitCondition { store().getPendingRevocation() == null })
+        assertTrue(awaitCondition { store().getPendingRevocations() == null })
         assertFalse(issued.refresh in kinde.validRefreshTokens)
     }
 
@@ -166,5 +166,34 @@ class LogoutTest : SdkTestBase() {
 
         assertTrue(awaitCondition { kinde.revokeRequests().isNotEmpty() })
         assertEquals("client_from_login_override", kinde.form(kinde.revokeRequests().single())["client_id"])
+    }
+
+    private fun pendingTokens(): List<String> = store().getPendingRevocations()?.let { raw ->
+        org.json.JSONArray(raw).let { a -> (0 until a.length()).map { a.getJSONObject(it).getString("token") } }
+    } ?: emptyList()
+
+    @Test
+    fun `a second logout doesn't replace a revocation still waiting to be retried`() {
+        kinde.overrides["/oauth2/revoke"] = { okhttp3.mockwebserver.MockResponse().setResponseCode(503) }
+        val first = seedSession()
+        val f1 = facade()
+        deliverResult(f1, startLogout(f1), Activity.RESULT_OK, Intent())
+        assertTrue(awaitCondition { kinde.revokeRequests().isNotEmpty() })
+
+        val second = seedSession()
+        resetKindeClient()
+        val f2 = facade()
+        deliverResult(f2, startLogout(f2), Activity.RESULT_OK, Intent())
+        assertTrue(awaitCondition { kinde.revokeRequests().any { kinde.form(it)["token"] == second.refresh } })
+        idle()
+        assertEquals("both kept", setOf(first.refresh, second.refresh), pendingTokens().toSet())
+
+        kinde.overrides.remove("/oauth2/revoke")
+        resetKindeClient()
+        client()
+
+        assertTrue(awaitCondition { store().getPendingRevocations() == null })
+        assertFalse(first.refresh in kinde.validRefreshTokens)
+        assertFalse(second.refresh in kinde.validRefreshTokens)
     }
 }
