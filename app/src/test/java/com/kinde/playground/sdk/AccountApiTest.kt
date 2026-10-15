@@ -300,6 +300,26 @@ class AccountApiTest : SdkTestBase() {
     }
 
     @Test
+    fun `a listener that throws on a new token doesn't block later refreshes`() {
+        val old = seedSession()
+        var armed = false
+        facade(object : au.kinde.sdk.SDKListener by RecordingListener() {
+            override fun onNewToken(token: String) {
+                if (armed) throw IllegalStateException("bug in the app's listener")
+            }
+        })
+        armed = true
+        kinde.rejectStatus = 403
+        kinde.validAccessTokens.remove(old.access)
+
+        runCatching { onBackground { client().getUser() } }
+        kinde.validAccessTokens.clear()
+        runCatching { onBackground { client().getUser() } }
+
+        assertEquals("the second refresh wasn't left waiting", 2, kinde.tokenRequests().size)
+    }
+
+    @Test
     @KnownIssue("Every 403 is treated as an expired token, so a permission/scope refusal triggers a needless token refresh")
     fun `a 403 for a missing scope does not refresh the session`() {
         signedIn()
