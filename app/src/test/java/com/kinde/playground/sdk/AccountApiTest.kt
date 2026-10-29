@@ -291,6 +291,33 @@ class AccountApiTest : SdkTestBase() {
     }
 
     @Test
+    fun `listeners end on the newest token when a listener's own call refreshes it`() {
+        val old = seedSession()
+        var armed = false
+        facade(object : au.kinde.sdk.SDKListener by RecordingListener() {
+            override fun onNewToken(token: String) {
+                if (!armed) return
+                armed = false
+                // The app reacts to the new token with an API call that finds it rejected.
+                kinde.validAccessTokens.clear()
+                client().getUser()
+            }
+        })
+        val later = RecordingListener()
+        facade(later)
+        val replayed = later.tokens.size
+        armed = true
+        kinde.rejectStatus = 401
+        kinde.validAccessTokens.remove(old.access)
+
+        onBackground { client().getUser() }
+
+        assertEquals(2, kinde.tokenRequests().size)
+        val heard = later.tokens.drop(replayed).map { it.token }
+        assertEquals("last token heard: $heard", client().getToken(TokenType.ACCESS_TOKEN), heard.last())
+    }
+
+    @Test
     fun `a 403 for a missing scope does not refresh the session`() {
         signedIn()
         kinde.overrides["/api/v1/users"] = { MockResponse().setResponseCode(403).setBody("""{"errors":[{"code":"FORBIDDEN"}]}""") }
