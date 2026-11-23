@@ -273,4 +273,40 @@ class LogoutTest : SdkTestBase() {
         assertTrue("requests: ${kinde.paths()}", awaitCondition { kinde.revokeRequests().isNotEmpty() })
         assertEquals(issued.refresh, kinde.form(kinde.revokeRequests().last())["token"])
     }
+
+    @Test
+    fun `a logout's revocation replaces an unreadable record and is still retried`() {
+        val issued = seedSession()
+        val prefs = Store::class.java.getDeclaredField("authPrefs").apply { isAccessible = true }
+            .get(store()) as android.content.SharedPreferences
+        prefs.edit().putString("pending_revocation", "bm90IGVuY3J5cHRlZA==").commit()
+        kinde.overrides["/oauth2/revoke"] = { okhttp3.mockwebserver.MockResponse().setResponseCode(503) }
+        resetKindeClient()
+        val f = facade()
+
+        deliverResult(f, startLogout(f), Activity.RESULT_OK, Intent())
+        assertTrue(awaitCondition { kinde.revokeRequests().isNotEmpty() })
+        idle()
+
+        assertEquals("kept for a retry", listOf(issued.refresh), pendingTokens())
+    }
+
+    @Test
+    fun `a runtime domain whose record can't be read stays on the startup list`() {
+        FakeKinde().use { other ->
+            val otherStore = Store(context, other.domain)
+            val prefs = Store::class.java.getDeclaredField("authPrefs").apply { isAccessible = true }
+                .get(otherStore) as android.content.SharedPreferences
+            prefs.edit().putString("pending_revocation", "bm90IGVuY3J5cHRlZA==").commit()
+            val index = context.getSharedPreferences("kinde_pending_revocation_domains", android.content.Context.MODE_PRIVATE)
+            index.edit().putStringSet("domains", setOf(other.domain)).commit()
+
+            client()
+            idle()
+
+            assertTrue("nothing could be sent", other.revokeRequests().isEmpty())
+            assertEquals("kept for later launches", setOf(other.domain), index.getStringSet("domains", null))
+            assertEquals("record left untouched", "bm90IGVuY3J5cHRlZA==", prefs.getString("pending_revocation", null))
+        }
+    }
 }
