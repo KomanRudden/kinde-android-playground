@@ -256,4 +256,21 @@ class LogoutTest : SdkTestBase() {
         assertTrue(client().isAuthenticated())
         assertEquals("left in storage", "bm90IGVuY3J5cHRlZA==", prefs.getString("pending_revocation", null))
     }
+
+    @Test
+    fun `logout still signs out and revokes when an unreadable revocation is stored`() {
+        val issued = seedSession()
+        val prefs = Store::class.java.getDeclaredField("authPrefs").apply { isAccessible = true }
+            .get(store()) as android.content.SharedPreferences
+        prefs.edit().putString("pending_revocation", "bm90IGVuY3J5cHRlZA==").commit()
+        resetKindeClient()
+        val f = facade()
+
+        deliverResult(f, startLogout(f), Activity.RESULT_OK, Intent())
+
+        assertTrue(awaitCondition { listener.logoutCount == 1 })
+        assertFalse(client().isAuthenticated())
+        assertTrue("requests: ${kinde.paths()}", awaitCondition { kinde.revokeRequests().isNotEmpty() })
+        assertEquals(issued.refresh, kinde.form(kinde.revokeRequests().last())["token"])
+    }
 }
