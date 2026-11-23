@@ -166,4 +166,39 @@ class TokenRefreshTest : SdkTestBase() {
         assertFalse(onBackground { client().refreshToken() })
         assertTrue(kinde.tokenRequests().isEmpty())
     }
+
+    @Test
+    fun `a refresh still in flight when logout completes doesn't sign the user back in`() {
+        seedSession()
+        installFakeBrowser()
+        val f = facade()
+        val arrived = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        // Kinde answers the refresh only after the user has signed out.
+        kinde.overrides["/oauth2/token"] = {
+            kinde.overrides.remove("/oauth2/token")
+            arrived.countDown()
+            release.await(10, java.util.concurrent.TimeUnit.SECONDS)
+            okhttp3.mockwebserver.MockResponse().setResponseCode(200).setHeader("Content-Type", "application/json")
+                .setBody(kinde.tokenJson(kinde.issue()))
+        }
+        var refreshed: Boolean? = null
+        val refresh = Thread { refreshed = client().refreshToken() }
+        refresh.start()
+        assertTrue(arrived.await(10, java.util.concurrent.TimeUnit.SECONDS))
+
+        f.sdk.logout()
+        val endSession = awaitStartedForResult(f.activity)
+        org.junit.Assert.assertNotNull("end-session page opened", endSession)
+        deliverResult(f, endSession!!, android.app.Activity.RESULT_OK, android.content.Intent())
+        assertTrue(awaitCondition { listener.logoutCount == 1 })
+        release.countDown()
+        refresh.join(10_000)
+        idle()
+
+        assertEquals(false, refreshed)
+        assertFalse(client().isAuthenticated())
+        org.junit.Assert.assertNull(client().getRefreshToken())
+        org.junit.Assert.assertNull("no session saved", store().getState())
+    }
 }

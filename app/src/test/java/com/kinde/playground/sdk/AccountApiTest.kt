@@ -64,6 +64,26 @@ class AccountApiTest : SdkTestBase() {
     }
 
     @Test
+    fun `apps compiled against the six-field UserProfileV2 still find its constructors`() {
+        // Source can't catch this: a recompiled app just picks the new constructor. Look the
+        // old entry points up the way already-compiled code links to them instead.
+        val type = au.kinde.sdk.api.model.UserProfileV2::class.java
+        val s = String::class.java
+        val sixFields = type.getConstructor(s, s, s, s, s, s)
+        assertFalse("Java can call the six-field constructor", sixFields.isSynthetic)
+        // What Kotlin 2.2.0 callers that left arguments out were compiled to call.
+        val withDefaults = type.getConstructor(s, s, s, s, s, s, Int::class.javaPrimitiveType, kotlin.jvm.internal.DefaultConstructorMarker::class.java)
+
+        val profile = withDefaults.newInstance("kp_1", null, "Ann Lee", null, null, null, 0b111010, null)
+
+        assertEquals("kp_1", profile.id)
+        assertEquals("Ann Lee", profile.name)
+        assertNull(profile.givenName)
+        assertNull(profile.email)
+        assertEquals("Ann", sixFields.newInstance("kp_1", null, "Ann Lee", "Ann", "Lee", "1700000000").givenName)
+    }
+
+    @Test
     fun `network calls on the main thread return null and report WrongThreadException`() {
         signedIn()
 
@@ -344,6 +364,36 @@ class AccountApiTest : SdkTestBase() {
         assertEquals(2, kinde.tokenRequests().size)
         val heard = later.tokens.drop(replayed).map { it.token }
         assertEquals("last token heard: $heard", client().getToken(TokenType.ACCESS_TOKEN), heard.last())
+    }
+
+    @Test
+    fun `an onException listener that refreshes after a failed refresh doesn't hang`() {
+        val old = seedSession()
+        var heard: Exception? = null
+        var listenerCall: String? = null
+        facade(object : au.kinde.sdk.SDKListener by RecordingListener() {
+            override fun onException(exception: Exception) {
+                if (heard != null) return
+                heard = exception
+                // The app retries straight away, on the same thread, with a call that needs a refresh.
+                listenerCall = runCatching { client().getUser()?.id }.getOrElse { it.toString() }
+            }
+        })
+        kinde.rejectStatus = 403
+        kinde.validAccessTokens.remove(old.access)
+        // The first refresh fails at Kinde; the next one works.
+        kinde.overrides["/oauth2/token"] = {
+            kinde.overrides.remove("/oauth2/token")
+            MockResponse().setResponseCode(503)
+        }
+
+        val caller = Thread { runCatching { client().getUser() } }
+        caller.start()
+        caller.join(8_000)
+
+        assertNotNull("onException was called", heard)
+        assertFalse("the listener's call is still waiting on the failed refresh", caller.isAlive)
+        assertEquals("kp_test_user", listenerCall)
     }
 
     @Test
