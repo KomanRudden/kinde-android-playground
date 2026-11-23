@@ -318,6 +318,92 @@ class AccountApiTest : SdkTestBase() {
     }
 
     @Test
+    fun `a token refreshed while a listener runs still reaches listeners when that listener throws`() {
+        val old = seedSession()
+        var armed = false
+        facade(object : au.kinde.sdk.SDKListener by RecordingListener() {
+            override fun onNewToken(token: String) {
+                if (!armed) return
+                armed = false
+                // Another thread's call refreshes again while this listener is still running...
+                kinde.validAccessTokens.clear()
+                val done = CountDownLatch(1)
+                Thread { runCatching { client().getUser() }; done.countDown() }.start()
+                done.await(10, TimeUnit.SECONDS)
+                // ...and then the listener fails.
+                throw IllegalStateException("bug in the app's listener")
+            }
+        })
+        val later = RecordingListener()
+        facade(later)
+        val replayed = later.tokens.size
+        armed = true
+        kinde.rejectStatus = 401
+        kinde.validAccessTokens.remove(old.access)
+
+        runCatching { onBackground { client().getUser() } }
+
+        assertEquals(2, kinde.tokenRequests().size)
+        val heard = later.tokens.drop(replayed).map { it.token }
+        assertEquals("last token heard: $heard", client().getToken(TokenType.ACCESS_TOKEN), heard.lastOrNull())
+    }
+
+    @Test
+    fun `a listener whose own calls keep failing doesn't drive endless refreshes`() {
+        val old = seedSession()
+        var armed = false
+        var callbacks = 0
+        facade(object : au.kinde.sdk.SDKListener by RecordingListener() {
+            override fun onNewToken(token: String) {
+                // The cap only stops this test from hanging if the SDK does loop.
+                if (!armed || ++callbacks > 10) return
+                runCatching { client().getUser() }
+            }
+        })
+        armed = true
+        // Kinde keeps rejecting the profile call whatever token it gets.
+        kinde.overrides["/oauth2/user_profile"] = {
+            MockResponse().setResponseCode(401).setHeader("Content-Type", "application/json")
+                .setBody("""[{"Code":"TOKEN_ERROR","Message":"Missing or invalid token"}]""")
+        }
+        kinde.validAccessTokens.remove(old.access)
+
+        runCatching { onBackground { client().getUser() } }
+
+        assertTrue("token requests: ${kinde.tokenRequests().size}", kinde.tokenRequests().size <= 2)
+    }
+
+    @Test
+    fun `a call rejected with a token another thread already replaced retries without refreshing again`() {
+        val old = seedSession()
+        facade()
+        kinde.rejectStatus = 401
+        val arrived = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        // Hold the first profile call at "Kinde" until another thread has refreshed, then reject it.
+        kinde.overrides["/oauth2/user_profile"] = {
+            kinde.overrides.remove("/oauth2/user_profile")
+            arrived.countDown()
+            release.await(10, TimeUnit.SECONDS)
+            MockResponse().setResponseCode(401).setHeader("Content-Type", "application/json")
+                .setBody("""[{"Code":"TOKEN_ERROR","Message":"Missing or invalid token"}]""")
+        }
+        var profileId: String? = null
+        val slow = Thread { profileId = runCatching { client().getUser()?.id }.getOrNull() }
+        slow.start()
+        assertTrue(arrived.await(10, TimeUnit.SECONDS))
+
+        kinde.validAccessTokens.remove(old.access)
+        onBackground { client().getRoles(fresh) }
+        release.countDown()
+        slow.join(10_000)
+
+        assertEquals("kp_test_user", profileId)
+        assertEquals("only the other thread refreshed", 1, kinde.tokenRequests().size)
+        assertEquals("Bearer ${client().getToken(TokenType.ACCESS_TOKEN)}", bearer("/oauth2/user_profile"))
+    }
+
+    @Test
     fun `a 403 for a missing scope does not refresh the session`() {
         signedIn()
         kinde.overrides["/api/v1/users"] = { MockResponse().setResponseCode(403).setBody("""{"errors":[{"code":"FORBIDDEN"}]}""") }
