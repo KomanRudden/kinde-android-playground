@@ -178,6 +178,20 @@ class SessionRestoreTest : SdkTestBase() {
     }
 
     @Test
+    fun `keys cached by an older minified build are fetched again and the session restored`() {
+        // What a build shrunk with the old consumer rules saved: R8 had renamed Keys.keys and
+        // Key's fields, so the cache can't be read back as keys (finding 18).
+        val issued = seedSession(keysJson = """{"a":[{"a":"AQAB","b":"mod","c":"RS256","d":"key-1","e":"RSA"}]}""")
+
+        facade()
+
+        assertTrue("JWKS fetched again", awaitCondition { kinde.count("/.well-known/jwks.json") >= 1 })
+        assertTrue(awaitCondition { listener.tokens.any { it.token == issued.access } })
+        assertTrue(client().isAuthenticated())
+        assertTrue("readable keys saved", store().getKeys().orEmpty().contains("\"keys\""))
+    }
+
+    @Test
     @KnownIssue("With a saved session but no cached keys, a failed JWKS fetch (HTTP 503) leaves the listener with no event at all: no onNewToken, onLogout or onException")
     fun `offline launch with an unverifiable session tells the listener something definite`() {
         seedSession(keysJson = null)

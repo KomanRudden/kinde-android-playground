@@ -347,6 +347,37 @@ class AccountApiTest : SdkTestBase() {
     }
 
     @Test
+    fun `a token refreshed while a listener runs still reaches listeners when that listener throws`() {
+        val old = seedSession()
+        var armed = false
+        facade(object : au.kinde.sdk.SDKListener by RecordingListener() {
+            override fun onNewToken(token: String) {
+                if (!armed) return
+                armed = false
+                // Another thread's call refreshes again while this listener is still running...
+                kinde.validAccessTokens.clear()
+                val done = CountDownLatch(1)
+                Thread { runCatching { client().getUser() }; done.countDown() }.start()
+                done.await(10, TimeUnit.SECONDS)
+                // ...and then the listener fails.
+                throw IllegalStateException("bug in the app's listener")
+            }
+        })
+        val later = RecordingListener()
+        facade(later)
+        val replayed = later.tokens.size
+        armed = true
+        kinde.rejectStatus = 403
+        kinde.validAccessTokens.remove(old.access)
+
+        runCatching { onBackground { client().getUser() } }
+
+        assertEquals(2, kinde.tokenRequests().size)
+        val heard = later.tokens.drop(replayed).map { it.token }
+        assertEquals("last token heard: $heard", client().getToken(TokenType.ACCESS_TOKEN), heard.lastOrNull())
+    }
+
+    @Test
     @KnownIssue("Every 403 is treated as an expired token, so a permission/scope refusal triggers a needless token refresh")
     fun `a 403 for a missing scope does not refresh the session`() {
         signedIn()

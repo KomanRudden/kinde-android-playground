@@ -131,6 +131,25 @@ class TokenRefreshTest : SdkTestBase() {
     }
 
     @Test
+    fun `a refresh that returns the same access token isn't announced again`() {
+        val old = seedSession()
+        facade()
+        val replayed = listener.tokens.size
+        // Kinde can hand back the current access token to an early refresh (with a new refresh token).
+        kinde.overrides["/oauth2/token"] = {
+            val rotated = kinde.issue()
+            okhttp3.mockwebserver.MockResponse().setResponseCode(200).setHeader("Content-Type", "application/json")
+                .setBody(kinde.tokenJson(rotated.copy(access = old.access, id = old.id)))
+        }
+
+        assertTrue(onBackground { client().refreshToken() })
+        idle()
+
+        assertEquals(old.access, client().getToken(TokenType.ACCESS_TOKEN))
+        assertEquals("onNewToken calls: ${listener.tokens.drop(replayed)}", replayed, listener.tokens.size)
+    }
+
+    @Test
     fun `refreshToken on the main thread does nothing and reports WrongThreadException`() {
         seedSession()
         facade()
