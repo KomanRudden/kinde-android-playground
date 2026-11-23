@@ -3,6 +3,7 @@ package com.kinde.playground.sdk
 import android.app.Activity
 import android.content.Intent
 import au.kinde.sdk.model.TokenType
+import au.kinde.sdk.store.Store
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -195,5 +196,64 @@ class LogoutTest : SdkTestBase() {
         assertTrue(awaitCondition { store().getPendingRevocations() == null })
         assertFalse(first.refresh in kinde.validRefreshTokens)
         assertFalse(second.refresh in kinde.validRefreshTokens)
+    }
+
+    @Test
+    fun `a revocation Kinde rate-limits or times out is kept for a retry`() {
+        for (code in listOf(429, 408)) {
+            resetKindeClient()
+            store().savePendingRevocations(null)
+            val issued = seedSession()
+            kinde.overrides["/oauth2/revoke"] = { okhttp3.mockwebserver.MockResponse().setResponseCode(code) }
+            val before = kinde.revokeRequests().size
+            val f = facade()
+            deliverResult(f, startLogout(f), Activity.RESULT_OK, Intent())
+            assertTrue(awaitCondition { kinde.revokeRequests().size > before })
+            idle()
+
+            assertEquals("HTTP $code", listOf(issued.refresh), pendingTokens())
+        }
+    }
+
+    @Test
+    fun `a logout from a runtime domain is revoked on the next launch, even if the app doesn't use that domain again`() {
+        FakeKinde().use { other ->
+            // login(domain = …) rejects a host with a port, so a runtime domain can't point at a
+            // local fake. Recreate what a runtime-domain logout whose revocation failed leaves
+            // behind instead: the record in that domain's store, and the SDK's index of domains
+            // with pending revocations (an SDK internal, named here on purpose).
+            val refresh = other.issue().refresh
+            Store(context, other.domain).savePendingRevocations(
+                """[{"token":"$refresh","client_id":"${other.clientId}"}]"""
+            )
+            context.getSharedPreferences("kinde_pending_revocation_domains", android.content.Context.MODE_PRIVATE)
+                .edit().putStringSet("domains", setOf(other.domain)).commit()
+
+            // The next launch only knows the configured domain.
+            client()
+
+            assertTrue("requests: ${other.paths()}", awaitCondition { other.revokeRequests().isNotEmpty() })
+            assertEquals(refresh, other.form(other.revokeRequests().single())["token"])
+            assertEquals(other.clientId, other.form(other.revokeRequests().single())["client_id"])
+            assertTrue(awaitCondition { Store(context, other.domain).getPendingRevocations() == null })
+            assertFalse(refresh in other.validRefreshTokens)
+            assertTrue("nothing sent to the configured domain", kinde.revokeRequests().isEmpty())
+        }
+    }
+
+    @Test
+    fun `an unreadable pending revocation doesn't stop the app starting`() {
+        seedSession()
+        // Storage the SDK can't decrypt, e.g. after the app's key was lost.
+        val prefs = Store::class.java.getDeclaredField("authPrefs").apply { isAccessible = true }
+            .get(store()) as android.content.SharedPreferences
+        prefs.edit().putString("pending_revocation", "bm90IGVuY3J5cHRlZA==").commit()
+
+        resetKindeClient()
+        val started = runCatching { client(); facade(); idle() }
+
+        assertTrue("startup threw ${started.exceptionOrNull()}", started.isSuccess)
+        assertTrue(client().isAuthenticated())
+        assertEquals("left in storage", "bm90IGVuY3J5cHRlZA==", prefs.getString("pending_revocation", null))
     }
 }
