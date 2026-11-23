@@ -370,7 +370,39 @@ class AccountApiTest : SdkTestBase() {
 
         runCatching { onBackground { client().getUser() } }
 
-        assertTrue("token requests: ${kinde.tokenRequests().size}", kinde.tokenRequests().size <= 2)
+        // The app's call, the listener's call for that token (announced once), and the
+        // listener's call for the announced token, which stops there.
+        assertTrue("token requests: ${kinde.tokenRequests().size}", kinde.tokenRequests().size <= 3)
+    }
+
+    @Test
+    fun `an onException listener that refreshes after a failed refresh doesn't hang`() {
+        val old = seedSession()
+        var heard: Exception? = null
+        var listenerCall: String? = null
+        facade(object : au.kinde.sdk.SDKListener by RecordingListener() {
+            override fun onException(exception: Exception) {
+                if (heard != null) return
+                heard = exception
+                // The app retries straight away, on the same thread, with a call that needs a refresh.
+                listenerCall = runCatching { client().getUser()?.id }.getOrElse { it.toString() }
+            }
+        })
+        kinde.rejectStatus = 401
+        kinde.validAccessTokens.remove(old.access)
+        // The first refresh fails at Kinde; the next one works.
+        kinde.overrides["/oauth2/token"] = {
+            kinde.overrides.remove("/oauth2/token")
+            MockResponse().setResponseCode(503)
+        }
+
+        val caller = Thread { runCatching { client().getUser() } }
+        caller.start()
+        caller.join(8_000)
+
+        assertNotNull("onException was called", heard)
+        assertFalse("the listener's call is still waiting on the failed refresh", caller.isAlive)
+        assertEquals("kp_test_user", listenerCall)
     }
 
     @Test
